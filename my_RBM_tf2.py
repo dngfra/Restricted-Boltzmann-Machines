@@ -7,6 +7,8 @@ from tqdm import tqdm
 import random
 import matplotlib.pyplot as plt
 import h5py
+import deepdish as dd
+
 '''
 class monitoring():
     def reconstruction_cross_e(): 
@@ -41,12 +43,21 @@ class RBM():
         #self.learning_rate = tf.Variable(tf.fill([self._v_dim, self._h_dim], learning_rate), name="learning_rate")
     '''
     def save_model(self):
+        model_dict = {'weights': np.asarray(self.weights), 'visible biases': np.asarray(self.visible_biases), 'hidden_biases': np.asarray(self.hidden_biases)}
+        return dd.io.save('model.h5', model_dict)
 
-        return
+    def from_saved_model(self,model_path):
+        """
 
-    def from_saved_model(self):
-
-        return
+        :param model_path: string
+                           path of .h5 file containing dictionary of the model with following keys: {'weights', 'visible biases', 'hidden_biases' }
+        :return: loaded model
+        """
+        model_dict = dd.io.load('model_path')
+        self.weights = model_dict['weights']
+        self.visible_biases = model_dict['visible biases']
+        self.hidden_biases = model_dict['hidden biases']
+        return self
 
     #@tf.function
     def calculate_state(self, probability):
@@ -215,6 +226,7 @@ class RBM():
                      dictionary of numpy arrays with labels ['x_train','y_train','x_test', 'y_test']
         :return: self
         """
+        print('Start training...')
         for epoch in range(self._n_epoch):
             sys.stdout.write('\r')
             np.random.shuffle(data['x_train'])
