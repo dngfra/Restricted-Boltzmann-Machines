@@ -19,12 +19,13 @@ class monitoring():
 '''
 
 class RBM():
-    def __init__(self, visible_dim, hidden_dim,  number_of_epochs, batch_size, init_learning_rate = 0.01):
+    def __init__(self, visible_dim, hidden_dim,  number_of_epochs, batch_size,n_test_samples=100, init_learning_rate = 0.1):
         self._n_epoch = number_of_epochs
         self._v_dim = visible_dim
         self._h_dim = hidden_dim
         self._l_r = init_learning_rate
         self._batch_size = batch_size
+        self.n_test_samples = n_test_samples
         self._current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         self._log_dir = 'logs/scalars/' + self._current_time + '/train'
         self._file_writer = tf.summary.create_file_writer(self._log_dir)
@@ -43,14 +44,17 @@ class RBM():
         #self.learning_rate = tf.Variable(tf.fill([self._v_dim, self._h_dim], learning_rate), name="learning_rate")
     '''
     def save_model(self):
+        """
+        Save the current RBM model as .h5 file dictionary with  keys: {'weights', 'visible biases', 'hidden_biases' }
+        """
         model_dict = {'weights': np.asarray(self.weights), 'visible biases': np.asarray(self.visible_biases), 'hidden_biases': np.asarray(self.hidden_biases)}
-        return dd.io.save('model.h5', model_dict)
+        return dd.io.save('results/models/'+self._current_time+'model.h5', model_dict)
 
     def from_saved_model(self,model_path):
         """
 
         :param model_path: string
-                           path of .h5 file containing dictionary of the model with following keys: {'weights', 'visible biases', 'hidden_biases' }
+                           path of .h5 file containing dictionary of the model with  keys: {'weights', 'visible biases', 'hidden_biases' }
         :return: loaded model
         """
         model_dict = dd.io.load('model_path')
@@ -141,7 +145,7 @@ class RBM():
 
 
 
-    def reconstruction_cross_entropy(self,test_point, plot=True):
+    def reconstruction_cross_entropy(self,test_points, plot=True):
         """
         Compute the reconstruction cross entropy = - \Sum_[i=1]^d z_i log(p(z_i)) + (1-z_i) log(1-p(z_i)) where i
         is the i-th component of the reconstructed vector and p(z_i) = sigmoid(Wx+b)_i.
@@ -153,23 +157,29 @@ class RBM():
                 Reconstruction cross entropy
         """
         #TODO: do we need to average over multiple test point?
-        reconstruction,prob = self.sample(inpt=test_point)
+        
+        r_ce_list=[]
+        for vec in test_points: 
+            reconstruction,prob = self.sample(inpt=vec)
+            #tf.where is needed to have 0*-\infty = 0
+            r_ce = tf.multiply(reconstruction, tf.where(tf.math.is_inf(tf.math.log(prob)),np.zeros_like(tf.math.log(prob)),tf.math.log(prob))) \
+                   + tf.multiply((1-reconstruction), tf.where(tf.math.is_inf(tf.math.log(1-prob)),np.zeros_like(tf.math.log(1-prob)), tf.math.log(1-prob)))
+            r_ce_list.append(-tf.reduce_sum(r_ce,1)[0])
+
         if plot:
+            reconstruction_plot, _ = self.sample(inpt=test_points[1,:])
             fig, axes = plt.subplots(nrows=1, ncols=2)
-            axes[0].imshow(test_point.reshape(28, 28),cmap='Greys')
+            axes[0].imshow(test_points[1,:].reshape(28, 28),cmap='Greys')
             axes[0].set_title("Original Image")
-            axes[1].imshow(np.asarray(reconstruction).reshape(28, 28), cmap='Greys')
+            axes[1].imshow(np.asarray(reconstruction_plot).reshape(28, 28), cmap='Greys')
             axes[1].set_title("Reconstruction")
             plt.show(block=False)
             plt.pause(3)
             plt.close()
-        #tf.where is needed to have 0*-\infty = 0
-        r_ce = tf.multiply(reconstruction, tf.where(tf.math.is_inf(tf.math.log(prob)),np.zeros_like(tf.math.log(prob)),tf.math.log(prob))) \
-               + tf.multiply((1-reconstruction), tf.where(tf.math.is_inf(tf.math.log(1-prob)),np.zeros_like(tf.math.log(1-prob)), tf.math.log(1-prob)))
 
-        return -tf.reduce_sum(r_ce,1)[0]
+        return np.average(r_ce_list)
 
-    def average_squared_error(self, test_point):
+    def average_squared_error(self, test_points):
         """
         Compute the mean squared error between a test vector and its reconstruction performed by the RBM, ||x - z||^2.  
         :param test_point: array, shape(visible_dim)
@@ -177,10 +187,13 @@ class RBM():
         :return: sqr: float
                       error
         """
-        reconstruction,_ = self.sample(inpt = test_point)
-        as_e = tf.pow(test_point - reconstruction,2)
-        sqr = tf.reduce_sum(as_e,1)/self._v_dim
-        return sqr[0]
+        ase_list=[]
+        for vec in test_points:
+            reconstruction,_ = self.sample(inpt = vec)
+            as_e = tf.pow(vec - reconstruction,2)
+            sqr = tf.reduce_sum(as_e,1)/self._v_dim
+            ase_list.append(sqr[0])
+            return np.mean(ase_list)
 
     def free_energy(self,test_point):
         """
@@ -230,7 +243,8 @@ class RBM():
         for epoch in range(self._n_epoch):
             sys.stdout.write('\r')
             np.random.shuffle(data['x_train'])
-            #learning_rate = self.exp_decay_l_r(epoch)
+            with tf.name_scope('Learning rate'):
+                learning_rate = self.exp_decay_l_r(epoch)
             for i in tqdm(range(0, data['x_train'].shape[0], self._batch_size)):
                 x_train_mini = data['x_train'][i:i+self._batch_size]
                 batch_dw = np.zeros((self._h_dim, self._v_dim, self._batch_size)) #d_w,d_v,d_h don't know why but this is not working
@@ -243,19 +257,24 @@ class RBM():
                 dw = np.average(batch_dw,2)
                 dvb = np.average(batch_dvb,1)
                 dhb = np.average(batch_dhb,1)
-                self.weights = self.weights + self._l_r * dw
-                self.visible_biases = self.visible_biases + self._l_r* dvb
-                self.hidden_biases = self.hidden_biases + self._l_r* dhb
+                self.weights = self.weights + learning_rate * dw
+                self.visible_biases = self.visible_biases + learning_rate* dvb
+                self.hidden_biases = self.hidden_biases + learning_rate* dhb
+            #Save model every epoch
+            self.save_model()
+
             #test every epoch
-            random_test_point = random.randint(0,data['x_test'].shape[0]-1) #read documentation for -1
+            np.random.shuffle(data['x_test'])
+            rnd_test_points_idx = np.random.randint(low = 0,high = data['x_test'].shape[0], size=self.n_test_samples) #sample size random points indexes from test
             with tf.name_scope('rec_error'): #TODO: fix the sample and not the point
-                rec_error = self.reconstruction_cross_entropy(data['x_test'][random_test_point]) #TODO: add random test datapoint
+                rec_error = self.reconstruction_cross_entropy(data['x_test'][rnd_test_points_idx,:]) #TODO: add random test datapoint
             tf.summary.scalar('rec_error', rec_error, step = epoch)
             with tf.name_scope('squared_error'):
-                sq_error = self.average_squared_error(data['x_test'][random_test_point])
+                sq_error = self.average_squared_error(data['x_test'][rnd_test_points_idx,:])
             tf.summary.scalar('squared_error', sq_error, step = epoch)
             with tf.name_scope('Free Energy'):
-                free_energy = self.free_energy(data['x_test'][random_test_point])
+                free_energy = self.free_energy(data['x_test'][rnd_test_points_idx[0],:])
             tf.summary.scalar('Free Energy', free_energy, step = epoch)
+            tf.summary.scalar('Learning rate', learning_rate, step = epoch)
 
             print("epoch %d" % (epoch + 1),"Rec error: %s" % np.asarray(rec_error),"sq_error %s" % np.asarray(sq_error))
