@@ -6,6 +6,7 @@ import sys
 from tqdm import tqdm
 import random
 import matplotlib.pyplot as plt
+import h5py
 '''
 class monitoring():
     def reconstruction_cross_e(): 
@@ -39,8 +40,23 @@ class RBM():
         self.weights = tf.Variable(tf.random.normal([self._h_dim,self._v_dim], mean = 0.0, stddev = 0.01),tf.float32, name="weights")
         #self.learning_rate = tf.Variable(tf.fill([self._v_dim, self._h_dim], learning_rate), name="learning_rate")
     '''
+    def save_model(self):
+
+        return
+
+    def from_saved_model(self):
+
+        return
+
     #@tf.function
     def calculate_state(self, probability):
+        """
+        Given the probability(x'=1|W,b) = sigmoid(Wx+b) computes the next state by sampling from the relative binomial distribution.
+        x and x' can be the visible and hidden layers respectively or viceversa.
+        :param probability: array, shape(visible_dim) or shape(hidden_dim)
+        :return: array , shape(visible_dim) or shape(hidden_dim)
+                 0,1 state of each unit in the layer
+        """
         binom = tf.concat([1-probability,probability],0)
         prob_re = tf.reshape(binom,(2,probability.get_shape()[1]))
         #print("check summation probability:", tf.reduce_sum(prob_re,0)) # check prob summation to 1
@@ -48,7 +64,15 @@ class RBM():
    
 
     #@tf.function
-    def sample(self, inpt = None ,n_step_MC=1): #the error is probably because i cannot use self here inside
+    def sample(self, inpt = None ,n_step_MC=1):
+        """
+        Sample from the RBM with n_step_MC steps markov chain.
+        :param inpt: array shape(visible_dim)
+                     It is possible to start the markov chain from a given point from the dataset or from a random state
+        :param n_step_MC: scalar
+                          number of markov chain steps to sample.
+        :return:
+        """
         if inpt.any() == None:
             inpt = tf.constant(np.random.randint(2, size=self._v_dim))
         hidden_probabilities_0 = tf.sigmoid(tf.add(tf.tensordot(self.weights, inpt,1), self.hidden_biases)) # dimension W + 1 row for biases
@@ -132,7 +156,7 @@ class RBM():
         r_ce = tf.multiply(reconstruction, tf.where(tf.math.is_inf(tf.math.log(prob)),np.zeros_like(tf.math.log(prob)),tf.math.log(prob))) \
                + tf.multiply((1-reconstruction), tf.where(tf.math.is_inf(tf.math.log(1-prob)),np.zeros_like(tf.math.log(1-prob)), tf.math.log(1-prob)))
 
-        return -tf.reduce_sum(r_ce,1)[0] # TODO: check if this axis is actually correct
+        return -tf.reduce_sum(r_ce,1)[0]
 
     def average_squared_error(self, test_point):
         """
@@ -145,9 +169,17 @@ class RBM():
         reconstruction,_ = self.sample(inpt = test_point)
         as_e = tf.pow(test_point - reconstruction,2)
         sqr = tf.reduce_sum(as_e,1)/self._v_dim
-        return sqr[0] #TODO: check if the axis for the sum is correct
+        return sqr[0]
 
     def free_energy(self,test_point):
+        """
+        Compute the free energy of the RBM, it is useful to compute the pseudologlikelihood.
+        F(v) = - log \sum_h e^{-E(v,h)} = -bv - \sum_i \log(1 + e^{c_i + W_i v}) where v= visible state, h = hidden state,
+        b = visible biases, c = hidden biases, W_i = i-th column of the weights matrix
+        :param test_point: array, shape(visible_dim)
+                           random point sampled from the test set
+        :return: scalar
+        """
         bv = tf.tensordot(test_point, tf.transpose(self.visible_biases),1)
         wx_b = tf.tensordot(self.weights,test_point,1) + self.hidden_biases
         hidden_term = tf.reduce_sum(tf.math.log(1+tf.math.exp(wx_b)))
@@ -162,9 +194,14 @@ class RBM():
         return self
 
     def exp_decay_l_r(self,epoch):
-        initial_lrate = self._l_r
+        """
+        When training a model, it is often recommended to lower the learning rate as the training progresses.
+        This function applies an exponential decay function to a provided initial learning rate.
+        :param epoch: scalar
+        :return: scalar
+        """
         k = 0.1
-        lrate = initial_lrate * np.exp(-k * epoch)
+        lrate = self._l_r * np.exp(-k * epoch)
         return lrate
 
 
@@ -175,7 +212,7 @@ class RBM():
         In the last part a random datapoint is sampled from the test set to calculate the error reconstruction. The entire procedure is repeted 
          _n_epochs times.
         :param data: dict
-                     dictionary of numpy arrays with ['x_train','y_train','x_test', 'y_test']
+                     dictionary of numpy arrays with labels ['x_train','y_train','x_test', 'y_test']
         :return: self
         """
         for epoch in range(self._n_epoch):

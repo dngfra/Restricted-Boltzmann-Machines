@@ -1,8 +1,9 @@
-tqdm==4.31.1
-numpy==1.16.2
-matplotlib==3.0.3
-scipy==1.2.1
 tensorflow==2.0.0a0
+numpy==1.16.2
+scipy==1.2.1
+seaborn==0.9.0
+tqdm==4.31.1
+h5py==2.9.0
+matplotlib==3.0.3
 base==1.0.4
 scikit_learn==0.20.3
-utils==0.9.0
