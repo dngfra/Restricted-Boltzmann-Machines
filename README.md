@@ -29,4 +29,4 @@ source activate RBM
 
 tensorboard --logdir=path/to/logs
 ``` 
-In your browser you just need to go to http://localhost:6006/ 
+In your browser you just need to go to http://localhost:6006/. 

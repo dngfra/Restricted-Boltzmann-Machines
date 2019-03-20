@@ -47,17 +47,17 @@ class RBM():
         """
         Save the current RBM model as .h5 file dictionary with  keys: {'weights', 'visible biases', 'hidden_biases' }
         """
-        model_dict = {'weights': np.asarray(self.weights), 'visible biases': np.asarray(self.visible_biases), 'hidden_biases': np.asarray(self.hidden_biases)}
+        model_dict = {'weights': np.asarray(self.weights), 'visible biases': np.asarray(self.visible_biases), 'hidden biases': np.asarray(self.hidden_biases)}
         return dd.io.save('results/models/'+self._current_time+'model.h5', model_dict)
 
     def from_saved_model(self,model_path):
         """
 
         :param model_path: string
-                           path of .h5 file containing dictionary of the model with  keys: {'weights', 'visible biases', 'hidden_biases' }
+                           path of .h5 file containing dictionary of the model with  keys: {'weights', 'visible biases', 'hidden biases' }
         :return: loaded model
         """
-        model_dict = dd.io.load('model_path')
+        model_dict = dd.io.load(model_path)
         self.weights = model_dict['weights']
         self.visible_biases = model_dict['visible biases']
         self.hidden_biases = model_dict['hidden biases']
@@ -79,17 +79,20 @@ class RBM():
    
 
     #@tf.function
-    def sample(self, inpt = None ,n_step_MC=1):
+    def sample(self, inpt = [] ,n_step_MC=1):
         """
         Sample from the RBM with n_step_MC steps markov chain.
         :param inpt: array shape(visible_dim)
                      It is possible to start the markov chain from a given point from the dataset or from a random state
         :param n_step_MC: scalar
                           number of markov chain steps to sample.
-        :return:
+        :return: visible_states_1: array shape(visible_dim)
+                 visible state after n_step_MC steps
+                 visible_probabilities_1: array shape(visible_dim)
+                 probabilities from which visible_states_1 is sampled
         """
-        if inpt.any() == None:
-            inpt = tf.constant(np.random.randint(2, size=self._v_dim))
+        if len(inpt) == 0:
+            inpt = tf.constant(np.random.randint(2, size=self._v_dim), tf.float32)
         hidden_probabilities_0 = tf.sigmoid(tf.add(tf.tensordot(self.weights, inpt,1), self.hidden_biases)) # dimension W + 1 row for biases
         hidden_states_0 = self.calculate_state(hidden_probabilities_0)
         for _ in range(n_step_MC): #gibbs update
