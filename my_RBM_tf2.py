@@ -104,7 +104,7 @@ class RBM():
         return visible_states_1,visible_probabilities_1
 
     #@tf.function
-    def contr_divergence(self, data_point, n_step_MC=1): #TODO: add regularization term, I could use sample in the following
+    def contr_divergence(self, data_point, n_step_MC=1,L2_l = 0): #TODO: add regularization term, I could use sample in the following
         """
         Perform contrastive divergence given a data point.
         :param data_point: array, shape(visible layer)
@@ -231,6 +231,16 @@ class RBM():
         lrate = self._l_r * np.exp(-k * epoch)
         return lrate
 
+    def variable_summaries(self,var, step):
+        with tf.name_scope('summaries'):
+            mean = tf.reduce_mean(var)
+            tf.summary.scalar('mean', mean, step)
+            with tf.name_scope('stddev'):
+                stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
+            tf.summary.scalar('stddev', stddev, step)
+            tf.summary.scalar('max', tf.reduce_max(var), step)
+            tf.summary.scalar('min', tf.reduce_min(var), step)
+            tf.summary.histogram('histogram', var, step = step)
 
     def train(self, data):
         """
@@ -279,5 +289,7 @@ class RBM():
                 free_energy = self.free_energy(data['x_test'][rnd_test_points_idx[0],:])
             tf.summary.scalar('Free Energy', free_energy, step = epoch)
             tf.summary.scalar('Learning rate', learning_rate, step = epoch)
+            with tf.name_scope('Weights'):
+                self.variable_summaries(self.weights, step = epoch)
 
             print("epoch %d" % (epoch + 1),"Rec error: %s" % np.asarray(rec_error),"sq_error %s" % np.asarray(sq_error))
