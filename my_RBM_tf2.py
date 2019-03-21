@@ -19,7 +19,7 @@ class monitoring():
 '''
 
 class RBM():
-    def __init__(self, visible_dim, hidden_dim,  number_of_epochs, batch_size,n_test_samples=100, init_learning_rate = 0.1):
+    def __init__(self, visible_dim, hidden_dim,  number_of_epochs, batch_size,n_test_samples=100, init_learning_rate = 0.8):
         self._n_epoch = number_of_epochs
         self._v_dim = visible_dim
         self._h_dim = hidden_dim
@@ -92,7 +92,8 @@ class RBM():
                  probabilities from which visible_states_1 is sampled
         """
         if len(inpt) == 0:
-            inpt = tf.constant(np.random.randint(2, size=self._v_dim), tf.float32)
+            #inpt = tf.constant(np.random.randint(2, size=self._v_dim), tf.float32)
+            inpt = tf.constant(np.random.choice([0,1], size=self._v_dim,p=[0.7,0.3]), tf.float32)
         hidden_probabilities_0 = tf.sigmoid(tf.add(tf.tensordot(self.weights, inpt,1), self.hidden_biases)) # dimension W + 1 row for biases
         hidden_states_0 = self.calculate_state(hidden_probabilities_0)
         for _ in range(n_step_MC): #gibbs update
@@ -101,16 +102,17 @@ class RBM():
             hidden_probabilities_1 = tf.sigmoid(tf.add(tf.tensordot(visible_states_1, tf.transpose(self.weights),1), self.hidden_biases)) # dimension W + 1 row for biases
             hidden_states_1 = self.calculate_state(hidden_probabilities_1)
             hidden_states_0 = hidden_states_1
-        return visible_states_1,visible_probabilities_1
+        return visible_states_1,visible_probabilities_1,inpt
 
     #@tf.function
-    def contr_divergence(self, data_point, n_step_MC=1,L2_l = 0): #TODO: add regularization term, I could use sample in the following
+    def contr_divergence(self, data_point, n_step_MC=1, L2_l = 0): #TODO: I could use sample in the following
         """
         Perform contrastive divergence given a data point.
         :param data_point: array, shape(visible layer)
                            data point sampled from the batch
         :param n_step_MC: int
                           tep of the markov chain for the sampling (CD1,CD2,...)
+        :param L2_l: float, lambda for L2 regularization, default = 0 so no regularization performed
         :return: delta_w: array shape(hidden_dim, visible_dim)
                           Array of the same shape of the weight matrix which entries are the gradients dw_{ij}
                  delta_vb: array, shape(visible_dim)
@@ -131,9 +133,9 @@ class RBM():
 
         vh_0 = tf.reshape(tf.tensordot(hidden_states_0_copy, data_point, 0), (200,784))
         vh_1 = tf.reshape(tf.tensordot(hidden_states_1, visible_states_1, 0), (200,784))
-        delta_w = tf.add(vh_0, - vh_1)
-        delta_vb = tf.add(data_point, - visible_states_1)
-        delta_hb = tf.add(hidden_states_0_copy, - hidden_states_1)
+        delta_w = tf.add(vh_0, - vh_1) +L2_l*self.weights
+        delta_vb = tf.add(data_point, - visible_states_1) + L2_l*self.visible_biases
+        delta_hb = tf.add(hidden_states_0_copy, - hidden_states_1) + L2_l*self.hidden_biases
         return delta_w, delta_vb, delta_hb
 
     #@tf.function
@@ -163,14 +165,14 @@ class RBM():
         
         r_ce_list=[]
         for vec in test_points: 
-            reconstruction,prob = self.sample(inpt=vec)
+            reconstruction,prob,_ = self.sample(inpt=vec)
             #tf.where is needed to have 0*-\infty = 0
             r_ce = tf.multiply(reconstruction, tf.where(tf.math.is_inf(tf.math.log(prob)),np.zeros_like(tf.math.log(prob)),tf.math.log(prob))) \
                    + tf.multiply((1-reconstruction), tf.where(tf.math.is_inf(tf.math.log(1-prob)),np.zeros_like(tf.math.log(1-prob)), tf.math.log(1-prob)))
             r_ce_list.append(-tf.reduce_sum(r_ce,1)[0])
 
         if plot:
-            reconstruction_plot, _ = self.sample(inpt=test_points[1,:])
+            reconstruction_plot, _, _= self.sample(inpt=test_points[1,:])
             fig, axes = plt.subplots(nrows=1, ncols=2)
             axes[0].imshow(test_points[1,:].reshape(28, 28),cmap='Greys')
             axes[0].set_title("Original Image")
@@ -192,7 +194,7 @@ class RBM():
         """
         ase_list=[]
         for vec in test_points:
-            reconstruction,_ = self.sample(inpt = vec)
+            reconstruction,_,_= self.sample(inpt = vec)
             as_e = tf.pow(vec - reconstruction,2)
             sqr = tf.reduce_sum(as_e,1)/self._v_dim
             ase_list.append(sqr[0])
@@ -265,7 +267,7 @@ class RBM():
                 batch_dhb = np.zeros((self._h_dim, self._batch_size))
                 for ind,vec in enumerate(x_train_mini):
                     #print(ind)
-                    batch_dw[:,:,ind],batch_dvb[:,ind],batch_dhb[:,ind] = self.contr_divergence(vec) #d_w,d_v,d_h not working get lost to write down the values
+                    batch_dw[:,:,ind],batch_dvb[:,ind],batch_dhb[:,ind] = self.contr_divergence(vec, L2_l=0) #d_w,d_v,d_h not working get lost to write down the values
 
                 dw = np.average(batch_dw,2)
                 dvb = np.average(batch_dvb,1)
@@ -279,17 +281,19 @@ class RBM():
             #test every epoch
             np.random.shuffle(data['x_test'])
             rnd_test_points_idx = np.random.randint(low = 0,high = data['x_test'].shape[0], size=self.n_test_samples) #sample size random points indexes from test
-            with tf.name_scope('rec_error'): #TODO: fix the sample and not the point
+            with tf.name_scope('Errors'): #TODO: fix the sample and not the point
                 rec_error = self.reconstruction_cross_entropy(data['x_test'][rnd_test_points_idx,:]) #TODO: add random test datapoint
-            tf.summary.scalar('rec_error', rec_error, step = epoch)
-            with tf.name_scope('squared_error'):
                 sq_error = self.average_squared_error(data['x_test'][rnd_test_points_idx,:])
-            tf.summary.scalar('squared_error', sq_error, step = epoch)
-            with tf.name_scope('Free Energy'):
                 free_energy = self.free_energy(data['x_test'][rnd_test_points_idx[0],:])
+            tf.summary.scalar('rec_error', rec_error, step = epoch)
+            tf.summary.scalar('squared_error', sq_error, step = epoch)
             tf.summary.scalar('Free Energy', free_energy, step = epoch)
             tf.summary.scalar('Learning rate', learning_rate, step = epoch)
             with tf.name_scope('Weights'):
                 self.variable_summaries(self.weights, step = epoch)
+            with tf.name_scope('Hidden biases'):
+                self.variable_summaries(self.hidden_biases, step = epoch)
+            with tf.name_scope('Visible biases'):
+                self.variable_summaries(self.visible_biases, step=epoch)
 
             print("epoch %d" % (epoch + 1),"Rec error: %s" % np.asarray(rec_error),"sq_error %s" % np.asarray(sq_error))

@@ -20,8 +20,8 @@ x_train_binary = np.array([binarizer.fit_transform(slice) for slice in x_train])
 x_test_binary = np.array([binarizer.fit_transform(slice) for slice in x_test])
 
 #reshape pictures to be vectors and fix datatype
-x_train_binary = x_train_binary.reshape(x_train_binary.shape[0],-1).astype(np.float32)[:1600,:]
-x_test_binary = x_test_binary.reshape(x_test_binary.shape[0],-1).astype(np.float32)[:1600,:]
+x_train_binary = x_train_binary.reshape(x_train_binary.shape[0],-1).astype(np.float32)
+x_test_binary = x_test_binary.reshape(x_test_binary.shape[0],-1).astype(np.float32)
 
 #shuffle data
 np.random.shuffle(x_train_binary)
