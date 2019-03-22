@@ -79,7 +79,7 @@ class RBM():
    
 
     #@tf.function
-    def sample(self, inpt = [] ,n_step_MC=1):
+    def sample(self, inpt = [] ,n_step_MC=1,p_0=0.5,p_1=0.5): #TODO: add p_0 and p_1 in the arguments
         """
         Sample from the RBM with n_step_MC steps markov chain.
         :param inpt: array shape(visible_dim)
@@ -93,7 +93,7 @@ class RBM():
         """
         if len(inpt) == 0:
             #inpt = tf.constant(np.random.randint(2, size=self._v_dim), tf.float32)
-            inpt = tf.constant(np.random.choice([0,1], size=self._v_dim,p=[0.7,0.3]), tf.float32)
+            inpt = tf.constant(np.random.choice([0,1], size=self._v_dim,p=[p_0,p_1]), tf.float32)
         hidden_probabilities_0 = tf.sigmoid(tf.add(tf.tensordot(self.weights, inpt,1), self.hidden_biases)) # dimension W + 1 row for biases
         hidden_states_0 = self.calculate_state(hidden_probabilities_0)
         for _ in range(n_step_MC): #gibbs update
@@ -131,12 +131,13 @@ class RBM():
             hidden_states_1 = self.calculate_state(hidden_probabilities_1)
             hidden_states_0 = hidden_states_1
 
-        vh_0 = tf.reshape(tf.tensordot(hidden_states_0_copy, data_point, 0), (200,784))
-        vh_1 = tf.reshape(tf.tensordot(hidden_states_1, visible_states_1, 0), (200,784))
+        vh_0 = tf.reshape(tf.tensordot(hidden_states_0_copy, data_point, 0), (self._h_dim,self._v_dim))
+        vh_1 = tf.reshape(tf.tensordot(hidden_states_1, visible_states_1, 0), (self._h_dim,self._v_dim))
         delta_w = tf.add(vh_0, - vh_1) +L2_l*self.weights
         delta_vb = tf.add(data_point, - visible_states_1) + L2_l*self.visible_biases
         delta_hb = tf.add(hidden_states_0_copy, - hidden_states_1) + L2_l*self.hidden_biases
         return delta_w, delta_vb, delta_hb
+
 
     #@tf.function
     def persistent_contr_divergence(self, data):
