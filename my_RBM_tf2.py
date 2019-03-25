@@ -96,13 +96,15 @@ class RBM():
             inpt = tf.constant(np.random.choice([0,1], size=self._v_dim,p=[p_0,p_1]), tf.float32)
         hidden_probabilities_0 = tf.sigmoid(tf.add(tf.tensordot(self.weights, inpt,1), self.hidden_biases)) # dimension W + 1 row for biases
         hidden_states_0 = self.calculate_state(hidden_probabilities_0)
+        evolution_MC = [inpt]
         for _ in range(n_step_MC): #gibbs update
             visible_probabilities_1 = tf.sigmoid(tf.add(tf.tensordot(hidden_states_0,self.weights,1), self.visible_biases)) # dimension W + 1 row for biases
             visible_states_1 = self.calculate_state(visible_probabilities_1)
             hidden_probabilities_1 = tf.sigmoid(tf.add(tf.tensordot(visible_states_1, tf.transpose(self.weights),1), self.hidden_biases)) # dimension W + 1 row for biases
             hidden_states_1 = self.calculate_state(hidden_probabilities_1)
             hidden_states_0 = hidden_states_1
-        return visible_states_1,visible_probabilities_1,inpt
+            evolution_MC.append(np.asarray(visible_states_1))
+        return visible_states_1,visible_probabilities_1,inpt,evolution_MC
 
     #@tf.function
     def contr_divergence(self, data_point, n_step_MC=1, L2_l = 0): #TODO: I could use sample in the following
@@ -166,14 +168,14 @@ class RBM():
         
         r_ce_list=[]
         for vec in test_points: 
-            reconstruction,prob,_ = self.sample(inpt=vec)
+            reconstruction,prob,_,_ = self.sample(inpt=vec)
             #tf.where is needed to have 0*-\infty = 0
             r_ce = tf.multiply(reconstruction, tf.where(tf.math.is_inf(tf.math.log(prob)),np.zeros_like(tf.math.log(prob)),tf.math.log(prob))) \
                    + tf.multiply((1-reconstruction), tf.where(tf.math.is_inf(tf.math.log(1-prob)),np.zeros_like(tf.math.log(1-prob)), tf.math.log(1-prob)))
             r_ce_list.append(-tf.reduce_sum(r_ce,1)[0])
 
         if plot:
-            reconstruction_plot, _, _= self.sample(inpt=test_points[1,:])
+            reconstruction_plot= self.sample(inpt=test_points[1,:])[0]
             fig, axes = plt.subplots(nrows=1, ncols=2)
             axes[0].imshow(test_points[1,:].reshape(28, 28),cmap='Greys')
             axes[0].set_title("Original Image")
@@ -195,7 +197,7 @@ class RBM():
         """
         ase_list=[]
         for vec in test_points:
-            reconstruction,_,_= self.sample(inpt = vec)
+            reconstruction= self.sample(inpt = vec)[0]
             as_e = tf.pow(vec - reconstruction,2)
             sqr = tf.reduce_sum(as_e,1)/self._v_dim
             ase_list.append(sqr[0])

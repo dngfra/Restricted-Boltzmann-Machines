@@ -3,6 +3,7 @@ Implementation of restricted Boltzmann machines in Tensorflow 2
 
 ## Getting started
 
+
 ### Requirements
 Create a virtual environment and install all required packages:
 
@@ -11,6 +12,10 @@ Create a virtual environment and install all required packages:
 conda create --name RBM python=3.6
 
 source activate RBM
+
+pip install tensorflow==2.0.0-alpha0 
+
+pip install --upgrade tb-nightly
 
 pip install -r requirements.txt
 ``` 
