@@ -103,7 +103,7 @@ class RBM():
             hidden_probabilities_1 = tf.sigmoid(tf.add(tf.tensordot(visible_states_1, tf.transpose(self.weights),1), self.hidden_biases)) # dimension W + 1 row for biases
             hidden_states_1 = self.calculate_state(hidden_probabilities_1)
             hidden_states_0 = hidden_states_1
-            evolution_MC.append(np.asarray(visible_states_1))
+            evolution_MC.append(visible_states_1)
         return visible_states_1,visible_probabilities_1,inpt,evolution_MC
 
     #@tf.function
