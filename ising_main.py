@@ -8,10 +8,16 @@ import deepdish as dd
 
 data = dd.io.load('data/ising/ising_data.hdf5')
 
+#set default configuration as spin 1
+keys = list(data.keys())
+for key in keys:
+    data[key] = np.array([np.where(np.sum(slice)>0,-slice,slice) for slice in data[key]])
+
 data_T2 = data['T=2.000000']
 data_T2_26 = data['T=2.269000']
 data_T2_5 = data['T=2.500000']
 
+#binarize data
 binarizer = Binarizer(threshold=0)
 data_T2_binary = np.array([binarizer.fit_transform(slice) for slice in data_T2])
 data_T2_26_binary = np.array([binarizer.fit_transform(slice) for slice in data_T2_26])
@@ -19,7 +25,7 @@ data_T2_5_binary = np.array([binarizer.fit_transform(slice) for slice in data_T2
 label_T2 = np.ones((1000))*2
 
 
-
+#create dictionary for training
 x_train, x_test, y_train, y_test = train_test_split(data_T2_binary, label_T2, test_size=0.1, random_state=42)
 
 
