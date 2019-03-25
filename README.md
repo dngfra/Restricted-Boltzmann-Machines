@@ -1,7 +1,12 @@
 # Restricted-Boltzmann-Machines
 Implementation of restricted Boltzmann machines in Tensorflow 2
 
-![](pictures/sampling.gif=250x)
+![](pictures/sampling.gif)
+
+<img src="/pictures/sampling.gif" width="320" height="320"/>
+
+
+
 
 
 ## Getting started
