@@ -1,6 +1,9 @@
 # Restricted-Boltzmann-Machines
 Implementation of restricted Boltzmann machines in Tensorflow 2
 
+![](pictures/sampling.gif)
+
+
 ## Getting started
 
 
