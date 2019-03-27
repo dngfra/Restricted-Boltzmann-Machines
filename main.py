@@ -31,7 +31,7 @@ np.random.shuffle(x_test_binary)
 data = {"x_train": x_train_binary ,"y_train": y_train,"x_test": x_test_binary,"y_test": y_test}
 
 #Create a restricted boltzmann machines
-machine = RBM(x_train_binary[0].shape[0], 200, 100, 32)
+machine = RBM(x_train_binary[0].shape[0], 200, 100,(28,28), 32, 'pcd')
 
 #Train the machine
 machine.train(data)
