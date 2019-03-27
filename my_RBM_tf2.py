@@ -6,7 +6,6 @@ import sys
 from tqdm import tqdm
 import random
 import matplotlib.pyplot as plt
-import h5py
 import deepdish as dd
 
 '''
