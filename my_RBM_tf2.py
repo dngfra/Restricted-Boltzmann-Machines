@@ -19,13 +19,15 @@ class monitoring():
 '''
 
 class RBM():
-    def __init__(self, visible_dim, hidden_dim,  number_of_epochs, batch_size,n_test_samples=100, init_learning_rate = 0.8):
+    def __init__(self, visible_dim, hidden_dim,  number_of_epochs, picture_shape, batch_size, optimizer='cd',n_test_samples=100, init_learning_rate = 0.8):
         self._n_epoch = number_of_epochs
         self._v_dim = visible_dim
         self._h_dim = hidden_dim
         self._l_r = init_learning_rate
         self._batch_size = batch_size
+        self._picture_shape = picture_shape
         self.n_test_samples = n_test_samples
+        self.optimizer = optimizer
         self._current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         self._log_dir = 'logs/scalars/' + self._current_time + '/train'
         self._file_writer = tf.summary.create_file_writer(self._log_dir)
@@ -138,7 +140,7 @@ class RBM():
         delta_w = tf.add(vh_0, - vh_1) +L2_l*self.weights
         delta_vb = tf.add(data_point, - visible_states_1) + L2_l*self.visible_biases
         delta_hb = tf.add(hidden_states_0_copy, - hidden_states_1) + L2_l*self.hidden_biases
-        return delta_w, delta_vb, delta_hb
+        return delta_w, delta_vb, delta_hb, visible_states_1
 
 
     #@tf.function
@@ -177,9 +179,9 @@ class RBM():
         if plot:
             reconstruction_plot= self.sample(inpt=test_points[1,:])[0]
             fig, axes = plt.subplots(nrows=1, ncols=2)
-            axes[0].imshow(test_points[1,:].reshape(28, 28),cmap='Greys')
+            axes[0].imshow(test_points[1,:].reshape(self._picture_shape),cmap='Greys')
             axes[0].set_title("Original Image")
-            axes[1].imshow(np.asarray(reconstruction_plot).reshape(28, 28), cmap='Greys')
+            axes[1].imshow(np.asarray(reconstruction_plot).reshape(self._picture_shape), cmap='Greys')
             axes[1].set_title("Reconstruction")
             plt.show(block=False)
             plt.pause(3)
@@ -260,6 +262,7 @@ class RBM():
         print('Start training...')
         for epoch in range(self._n_epoch):
             sys.stdout.write('\r')
+            print(epoch, '/', self._n_epoch)
             np.random.shuffle(data['x_train'])
             with tf.name_scope('Learning rate'):
                 learning_rate = self.exp_decay_l_r(epoch)
@@ -268,10 +271,17 @@ class RBM():
                 batch_dw = np.zeros((self._h_dim, self._v_dim, self._batch_size)) #d_w,d_v,d_h don't know why but this is not working
                 batch_dvb = np.zeros((self._v_dim, self._batch_size))
                 batch_dhb = np.zeros((self._h_dim, self._batch_size))
-                for ind,vec in enumerate(x_train_mini):
-                    #print(ind)
-                    batch_dw[:,:,ind],batch_dvb[:,ind],batch_dhb[:,ind] = self.contr_divergence(vec, L2_l=0) #d_w,d_v,d_h not working get lost to write down the values
-
+                # I should create an optimizer class at the moment is just if
+                if self.optimizer == 'cd':
+                    for ind,vec in enumerate(x_train_mini):
+                        #print(ind)
+                        batch_dw[:,:,ind],batch_dvb[:,ind],batch_dhb[:,ind],_ = self.contr_divergence(vec, L2_l=0) #d_w,d_v,d_h not working get lost to write down the values
+                #Persistent contrastive divergence
+                elif self.optimizer == 'pcd':
+                    start_point = x_train_mini[np.random.randint(0,self._batch_size,1)].reshape(self._v_dim)
+                    for ind in range(self._batch_size):
+                        batch_dw[:, :, ind], batch_dvb[:, ind], batch_dhb[:, ind], last_state = self.contr_divergence(start_point)
+                        start_point = tf.reshape(last_state,(self._v_dim,))
                 dw = np.average(batch_dw,2)
                 dvb = np.average(batch_dvb,1)
                 dhb = np.average(batch_dhb,1)
@@ -288,10 +298,10 @@ class RBM():
                 rec_error = self.reconstruction_cross_entropy(data['x_test'][rnd_test_points_idx,:]) #TODO: add random test datapoint
                 sq_error = self.average_squared_error(data['x_test'][rnd_test_points_idx,:])
                 free_energy = self.free_energy(data['x_test'][rnd_test_points_idx[0],:])
-            tf.summary.scalar('rec_error', rec_error, step = epoch)
-            tf.summary.scalar('squared_error', sq_error, step = epoch)
-            tf.summary.scalar('Free Energy', free_energy, step = epoch)
-            tf.summary.scalar('Learning rate', learning_rate, step = epoch)
+                tf.summary.scalar('rec_error', rec_error, step = epoch)
+                tf.summary.scalar('squared_error', sq_error, step = epoch)
+                tf.summary.scalar('Free Energy', free_energy, step = epoch)
+                tf.summary.scalar('Learning rate', learning_rate, step = epoch)
             with tf.name_scope('Weights'):
                 self.variable_summaries(self.weights, step = epoch)
             with tf.name_scope('Hidden biases'):

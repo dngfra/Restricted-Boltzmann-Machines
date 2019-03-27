@@ -17,7 +17,7 @@ for key in keys:
     datah5[key] = np.array([np.where(np.sum(slice)>0,-slice,slice) for slice in datah5[key]])
     datah5[key] = np.array([binarizer.fit_transform(slice) for slice in datah5[key]])
 
-class_labels = np.asarray(list(itertools.chain.from_iterable(itertools.repeat(x, 5000) for x in range(0,4))))
+class_labels = np.asarray(list(itertools.chain.from_iterable(itertools.repeat(x, 5000) for x in range(0,6))))
 class_names = ['T=1.000000', 'T=2.186995', 'T=2.261435', 'T=2.268900', 'T=2.269184', 'T=3.000000'] # equivalent to keys
 
 data = datah5['T=1.000000']
@@ -35,7 +35,7 @@ x_test = x_test.reshape(x_test.shape[0],-1).astype(np.float32)
 data = {"x_train": x_train ,"y_train": y_train,"x_test": x_test,"y_test": y_test}
 
 #Create a restricted boltzmann machines
-machine = RBM(x_train[0].shape[0], 200, 1000,(32,32), 32)
+machine = RBM(x_train[0].shape[0], 200, 1000,(32,32), 32, optimizer='pc')
 
 #Train the machine
 machine.train(data)
