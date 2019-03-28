@@ -261,7 +261,7 @@ class RBM():
         print('Start training...')
         for epoch in range(self._n_epoch):
             sys.stdout.write('\r')
-            print(epoch, '/', self._n_epoch)
+            print('Epoch:',epoch, '/', self._n_epoch)
             np.random.shuffle(data['x_train'])
             with tf.name_scope('Learning rate'):
                 learning_rate = self.exp_decay_l_r(epoch)
