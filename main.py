@@ -3,6 +3,7 @@ import tensorflow as tf
 from sklearn.preprocessing import Binarizer
 #import matplotlib.pyplot as plt
 from my_RBM_tf2 import RBM
+from optimizer import Optimizer
 
 #Import mnist dataset
 mnist = tf.keras.datasets.mnist
@@ -28,11 +29,11 @@ np.random.shuffle(x_train_binary)
 np.random.shuffle(x_test_binary)
 
 #create dictionary of data
-data = {"x_train": x_train_binary ,"y_train": y_train,"x_test": x_test_binary,"y_test": y_test}
+data = {"x_train": x_train_binary[:1600] ,"y_train": y_train,"x_test": x_test_binary[:1000],"y_test": y_test}
 
 #Create a restricted boltzmann machines
-machine = RBM(x_train_binary[0].shape[0], 200, 100,(28,28), 32, 'pcd')
-
+machine = RBM(x_train_binary[0].shape[0], 200, 100,(28,28), 32, 'cd')
+optimus = Optimizer(machine, 0.1, opt = 'adam')
 #Train the machine
-machine.train(data)
+machine.train(data,optimus)
 

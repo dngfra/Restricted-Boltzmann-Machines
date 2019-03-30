@@ -7,6 +7,7 @@ from tqdm import tqdm
 import random
 import matplotlib.pyplot as plt
 import deepdish as dd
+from backend import Mydict
 
 '''
 class monitoring():
@@ -18,7 +19,7 @@ class monitoring():
 '''
 
 class RBM():
-    def __init__(self, visible_dim, hidden_dim,  number_of_epochs, picture_shape, batch_size, optimizer='cd',n_test_samples=100, init_learning_rate = 0.8):
+    def __init__(self, visible_dim, hidden_dim, number_of_epochs, picture_shape, batch_size, training_algorithm='cd', n_test_samples=100, init_learning_rate = 0.8):
         self._n_epoch = number_of_epochs
         self._v_dim = visible_dim
         self._h_dim = hidden_dim
@@ -26,30 +27,31 @@ class RBM():
         self._batch_size = batch_size
         self._picture_shape = picture_shape
         self.n_test_samples = n_test_samples
-        self.optimizer = optimizer
-        self._current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        self.training_algorithm = training_algorithm
+        self.epoch = 1
+        self.model = self.model()
+        self._current_time = datetime.datetime.now().strftime("%d%m-%H%M%S")
         self._log_dir = 'logs/scalars/' + self._current_time + '/train'
         self._file_writer = tf.summary.create_file_writer(self._log_dir)
         self._file_writer.set_as_default()
-        #self.model = self.model
-        self.visible_biases = tf.Variable(tf.random.uniform([1, visible_dim], 0, 0.1), tf.float32, name="visible_biases")
-        self.hidden_biases = tf.Variable(tf.random.uniform([1, hidden_dim], 0, 0.1), tf.float32, name="hidden_biases")
-        self.weights = tf.Variable(tf.random.normal([hidden_dim, visible_dim], mean = 0.0, stddev = 0.1), tf.float32, name="weights")
 
-    '''
-    @tf.function    
+    #@tf.function
     def model(self):
-        self.visible_biases = tf.Variable(tf.random.uniform([1, self._v_dim], 0, 1), tf.float32, name="visible_biases")
-        self.hidden_biases = tf.Variable(tf.random.uniform([1, self._h_dim], 0, 1), tf.float32, name="hidden_biases")
-        self.weights = tf.Variable(tf.random.normal([self._h_dim,self._v_dim], mean = 0.0, stddev = 0.01),tf.float32, name="weights")
-        #self.learning_rate = tf.Variable(tf.fill([self._v_dim, self._h_dim], learning_rate), name="learning_rate")
-    '''
+        self.visible_biases = tf.Variable(tf.random.uniform([1, self._v_dim], 0, 0.1), tf.float32, name="visible_biases")
+        self.hidden_biases = tf.Variable(tf.random.uniform([1, self._h_dim], 0, 0.1), tf.float32, name="hidden_biases")
+        self.weights = tf.Variable(tf.random.normal([self._h_dim, self._v_dim], mean = 0.0, stddev = 0.1), tf.float32, name="weights")
+        self.model_dict = {'weights': self.weights, 'visible biases': self.visible_biases, 'hidden biases': self.hidden_biases}
+        return
+
+    def update_model(self):
+        for key,value in self.model_dict.items():
+            setattr(self, key, value)
+
     def save_model(self):
         """
         Save the current RBM model as .h5 file dictionary with  keys: {'weights', 'visible biases', 'hidden_biases' }
         """
-        model_dict = {'weights': np.asarray(self.weights), 'visible biases': np.asarray(self.visible_biases), 'hidden biases': np.asarray(self.hidden_biases)}
-        return dd.io.save('results/models/'+self._current_time+'model.h5', model_dict)
+        return dd.io.save('results/models/'+self._current_time+'model.h5', self.model_dict)
 
     def from_saved_model(self,model_path):
         """
@@ -248,7 +250,7 @@ class RBM():
             tf.summary.scalar('min', tf.reduce_min(var), step)
             tf.summary.histogram('histogram', var, step = step)
 
-    def train(self, data):
+    def train(self, data, optimizer):
         """
         This function shuffle the dataset and create #data_train/batch_size mini batches and perform contrastive divergence on each vector of the batch. 
         The upgrade of the parameters is performed only at the end of each batch by taking the average of the gradients on the batch. 
@@ -259,34 +261,36 @@ class RBM():
         :return: self
         """
         print('Start training...')
-        for epoch in range(self._n_epoch):
-            sys.stdout.write('\r')
+        for epoch in range(1,self._n_epoch+1):
+            self.epoch = epoch
+            #sys.stdout.write('\r')
             print('Epoch:',epoch, '/', self._n_epoch)
             np.random.shuffle(data['x_train'])
-            with tf.name_scope('Learning rate'):
-                learning_rate = self.exp_decay_l_r(epoch)
+            #with tf.name_scope('Learning rate'):
+                #learning_rate = self.exp_decay_l_r(epoch)
             for i in tqdm(range(0, data['x_train'].shape[0], self._batch_size)):
                 x_train_mini = data['x_train'][i:i+self._batch_size]
                 batch_dw = np.zeros((self._h_dim, self._v_dim, self._batch_size)) #d_w,d_v,d_h don't know why but this is not working
                 batch_dvb = np.zeros((self._v_dim, self._batch_size))
                 batch_dhb = np.zeros((self._h_dim, self._batch_size))
+
                 # I should create an optimizer class at the moment is just if
-                if self.optimizer == 'cd':
+                if self.training_algorithm == 'cd':
                     for ind,vec in enumerate(x_train_mini):
-                        #print(ind)
                         batch_dw[:,:,ind],batch_dvb[:,ind],batch_dhb[:,ind],_ = self.contr_divergence(vec, L2_l=0) #d_w,d_v,d_h not working get lost to write down the values
+
                 #Persistent contrastive divergence
-                elif self.optimizer == 'pcd':
+                elif self.training_algorithm == 'pcd':
                     start_point = x_train_mini[np.random.randint(0,self._batch_size,1)].reshape(self._v_dim)
                     for ind in range(self._batch_size):
                         batch_dw[:, :, ind], batch_dvb[:, ind], batch_dhb[:, ind], last_state = self.contr_divergence(start_point)
                         start_point = tf.reshape(last_state,(self._v_dim,))
-                dw = np.average(batch_dw,2)
-                dvb = np.average(batch_dvb,1)
-                dhb = np.average(batch_dhb,1)
-                self.weights = self.weights + learning_rate * dw
-                self.visible_biases = self.visible_biases + learning_rate* dvb
-                self.hidden_biases = self.hidden_biases + learning_rate* dhb
+
+                self.grad_dict = {'weights': np.average(batch_dw,2),
+                                   'visible biases': np.average(batch_dvb,1),
+                                   'hidden biases': np.average(batch_dhb,1)}
+
+                optimizer.fit()
             #Save model every epoch
             self.save_model()
 
@@ -300,7 +304,6 @@ class RBM():
                 tf.summary.scalar('rec_error', rec_error, step = epoch)
                 tf.summary.scalar('squared_error', sq_error, step = epoch)
                 tf.summary.scalar('Free Energy', free_energy, step = epoch)
-                tf.summary.scalar('Learning rate', learning_rate, step = epoch)
             with tf.name_scope('Weights'):
                 self.variable_summaries(self.weights, step = epoch)
             with tf.name_scope('Hidden biases'):

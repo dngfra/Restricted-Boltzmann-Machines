@@ -24,7 +24,7 @@ pip install tensorflow==2.0.0-alpha0
 pip install --upgrade tb-nightly
 
 pip install -r requirements.txt
-``` 
+```
 ### Tensorboard 
 In machine learning, to improve something you often need to be able to measure it.
 TensorBoard is a tool for providing the measurements and visualizations needed during 
@@ -39,5 +39,5 @@ To use tensorboard you can use the following commands:
 source activate RBM
 
 tensorboard --logdir=path/to/logs
-``` 
+```
 In your browser you just need to go to http://localhost:6006/. 
