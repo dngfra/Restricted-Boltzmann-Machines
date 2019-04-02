@@ -7,7 +7,6 @@ from tqdm import tqdm
 import random
 import matplotlib.pyplot as plt
 import deepdish as dd
-from backend import Mydict
 
 '''
 class monitoring():
