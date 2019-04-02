@@ -7,6 +7,7 @@ from my_RBM_tf2 import RBM
 import deepdish as dd
 import itertools
 import os
+from optimizer import Optimizer
 
 datah5 = dd.io.load('data/ising/ising_data_complete.hdf5')
 
@@ -38,7 +39,7 @@ x_test = x_test.reshape(x_test.shape[0],-1).astype(np.float32)
 data = {"x_train": x_train ,"y_train": y_train,"x_test": x_test,"y_test": y_test}
 
 #Create a restricted boltzmann machines
-machine = RBM(x_train[0].shape[0], 200, 100, (32, 32), 32)
-
+machine = RBM(x_train[0].shape[0], 300, 100, (32, 32), 32)
+optimus = Optimizer(machine, 0.1, opt = 'adam')
 #Train the machine
-machine.train(data)
+machine.train(data,optimus)

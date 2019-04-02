@@ -220,9 +220,15 @@ class RBM():
         hidden_term = tf.reduce_sum(tf.math.log(1+tf.math.exp(wx_b)))
         return np.asarray(-hidden_term -bv)[0]
 
-    def pseudo_log_likelihood(self):
+    def pseudo_log_likelihood(self, test_point):
+        i = np.random.randint(0,self._v_dim,1)
+        test_point_flip = test_point.copy()
+        test_point_flip[i] = np.logical_not(test_point_flip[i])
+        fe_test = self.free_energy(test_point)
+        fe_flip = self.free_energy(test_point_flip)
+        pseudo = self._v_dim * tf.math.log(tf.sigmoid(fe_flip-fe_test))
 
-        return self
+        return pseudo
 
     def KL_divergence(self):
 
@@ -301,9 +307,11 @@ class RBM():
                 rec_error = self.reconstruction_cross_entropy(data['x_test'][rnd_test_points_idx,:]) #TODO: add random test datapoint
                 sq_error = self.average_squared_error(data['x_test'][rnd_test_points_idx,:])
                 free_energy = self.free_energy(data['x_test'][rnd_test_points_idx[0],:])
+                pseudo_log = self.pseudo_log_likelihood(data['x_test'][rnd_test_points_idx[0],:])
                 tf.summary.scalar('rec_error', rec_error, step = epoch)
                 tf.summary.scalar('squared_error', sq_error, step = epoch)
                 tf.summary.scalar('Free Energy', free_energy, step = epoch)
+                tf.summary.scalar('Pseudo log likelihood', pseudo_log, step=epoch)
             with tf.name_scope('Weights'):
                 self.variable_summaries(self.weights, step = epoch)
             with tf.name_scope('Hidden biases'):
