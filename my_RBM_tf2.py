@@ -156,7 +156,7 @@ class RBM():
 
 
 
-    def reconstruction_cross_entropy(self,test_points, plot=True):
+    def reconstruction_cross_entropy(self,test_points, plot=False):
         """
         Compute the reconstruction cross entropy = - \Sum_[i=1]^d z_i log(p(z_i)) + (1-z_i) log(1-p(z_i)) where i
         is the i-th component of the reconstructed vector and p(z_i) = sigmoid(Wx+b)_i.
