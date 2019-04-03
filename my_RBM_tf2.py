@@ -7,6 +7,7 @@ from tqdm import tqdm
 import random
 import matplotlib.pyplot as plt
 import deepdish as dd
+import h5py
 
 '''
 class monitoring():
@@ -50,7 +51,9 @@ class RBM():
         """
         Save the current RBM model as .h5 file dictionary with  keys: {'weights', 'visible biases', 'hidden_biases' }
         """
-        return dd.io.save('results/models/'+self._current_time+'model.h5', self.model_dict)
+        model_dict_save = {'weights': self.weights.numpy(), 'visible biases': self.visible_biases.numpy(),
+                           'hidden biases': self.hidden_biases.numpy()}
+        return dd.io.save('results/models/'+self._current_time+'model.h5', model_dict_save)
 
     def from_saved_model(self,model_path):
         """
@@ -59,10 +62,18 @@ class RBM():
                            path of .h5 file containing dictionary of the model with  keys: {'weights', 'visible biases', 'hidden biases' }
         :return: loaded model
         """
+
         model_dict = dd.io.load(model_path)
         self.weights = model_dict['weights']
         self.visible_biases = model_dict['visible biases']
         self.hidden_biases = model_dict['hidden biases']
+
+        '''
+        model = h5py.File(model_path, 'r')
+        self.weights = np.array(model.get('weights'))
+        self.visible_biases = np.array(model.get('visible biases'))
+        self.hidden_biases = np.array(model.get('hidden biases'))
+        '''
         return self
 
     #@tf.function
