@@ -1,7 +1,7 @@
 # Restricted-Boltzmann-Machines
 Implementation of restricted Boltzmann machines in Tensorflow 2
 
-<img src="/pictures/sampling.gif" width="320" height="320"/> <img src="/pictures/rbm.png" height="320"/>
+<img src="/pictures/rbm.png" height="240"/>
 
 
 
@@ -61,14 +61,17 @@ plot_input_sample(inpt,fantasy_particle1,(28,28))
 ``` 
 where we also used *plot_input_sample()* to plot the input and the sample. The method *.sample()* outputs other objects that could be useful for some analysis. 
 
-<img src="/pictures/sample.png" height="240"/>
+<img src="/pictures/sample.png" height="240"/> <img src="/pictures/sampling.gif" width="320" height="240"/> 
+
 ### Inspect the weights 
 Given a trained machine it could be usefull to visually inspect the weights or the features of the data that the machine is learning. To do so we can plot 
 the weights of each hidden units reshaped as the input pictures so that we can understand and see what, or which part of the picture is "activating" the hidden neurones. This
 is sometimes also called the receptive field for an analogy with what is happening with ganglion cells, rods and cones in the biological retina. 
 To do this we can use *plot_image_grid* from utils giving the weights of the machine. 
 
+
 <img src="/pictures/weights.png" height="320"/>
+
 ### Tensorboard 
 In machine learning, to improve something you often need to be able to measure it.
 TensorBoard is a tool for providing the measurements and visualizations needed during 
