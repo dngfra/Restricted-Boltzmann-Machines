@@ -1,7 +1,7 @@
 # Restricted-Boltzmann-Machines
 Implementation of restricted Boltzmann machines in Tensorflow 2
 
-<img src="/pictures/sampling_speed.gif" width="210" height="210"/>  <img src="/pictures/rbm.png" height="190"/>
+<img src="/pictures/sampling_speed.gif" width="210" height="210"/>  <img src="/pictures/rbm2.png" height="190"/>
 
 
 
