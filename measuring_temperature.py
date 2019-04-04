@@ -68,8 +68,7 @@ class_labels = np.asarray(list(itertools.chain.from_iterable(itertools.repeat(x,
 #Split the dataset into test and train
 ising_train, ising_test, temp_train, temp_test = train_test_split(data, class_labels, test_size=0.1, random_state=42)
 
-ising_train = ising_train.reshape((ising_train.shape[0], 32, 32, 1))
-ising_test = ising_test.reshape((ising_test.shape[0], 32, 32, 1))
+
 
 checkpoint_path = "training_1/cp.ckpt"
 checkpoint_dir = os.path.dirname(checkpoint_path)
@@ -78,8 +77,13 @@ checkpoint_dir = os.path.dirname(checkpoint_path)
 cp_callback = tf.keras.callbacks.ModelCheckpoint(checkpoint_path,save_weights_only=True,verbose=1, period=5)
 
 #Now we can create our neural network and print out a summary of the architecture
-neural_network = create_conv_model()
+neural_network = create_model()
 neural_network.summary()
+conv = False
+#reshape for conv nets
+if conv == True:
+    ising_train = ising_train.reshape((ising_train.shape[0], 32, 32, 1))
+    ising_test = ising_test.reshape((ising_test.shape[0], 32, 32, 1))
 
 #Start training the model by testing every epoch the accuracy of the class prediction on the test set
 
