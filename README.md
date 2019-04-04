@@ -56,12 +56,12 @@ starting from a real datapoint (if we specify *inpt*) or from random noise for w
 machine = RBM(784, 200, 100, (28,28), 32)
 machine.from_saved_model(path)
 
-visible_states_1,visible_probabilities_1,inpt,evolution_MC= machine.sample(n_step_MC=50000)
+visible_states_1,visible_probabilities_1,inpt,evolution_MC= machine.sample(n_step_MC=5000)
 plot_input_sample(inpt,fantasy_particle1,(28,28))
 ``` 
 where we also used *plot_input_sample()* to plot the input and the sample. The method *.sample()* outputs other objects that could be useful for some analysis. 
 
-<img src="/pictures/sample.png" height="240"/> <img src="/pictures/sampling.gif" width="240" height="240"/> 
+<img src="/pictures/sample.png" height="240"/> <img src="/pictures/sampling_speed.gif" width="210" height="210"/> 
 
 ### Inspect the weights 
 Given a trained machine it could be usefull to visually inspect the weights or the features of the data that the machine is learning. To do so we can plot 
