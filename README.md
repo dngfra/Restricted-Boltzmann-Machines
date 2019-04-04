@@ -69,6 +69,14 @@ the weights of each hidden units reshaped as the input pictures so that we can u
 is sometimes also called the receptive field for an analogy with what is happening with ganglion cells, rods and cones in the biological retina. 
 To do this we can use *plot_image_grid* from utils giving the weights of the machine. 
 
+``` python
+#using the same machine that we rebuild before
+image_shape = (28, 28) # 28x28 = 784 pixels in every image
+weights = np.asarray(machine.weights) 
+
+plot_image_grid(weights, image_shape,9, save = True)
+
+``` 
 
 <img src="/pictures/weights.png" height="320"/>
 
