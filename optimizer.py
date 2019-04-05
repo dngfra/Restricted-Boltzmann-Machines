@@ -11,7 +11,7 @@ class Optimizer:
 
     def adam(self):
         """
-
+        Update the model using adam optimizer.
         :param model: Dictionary of weights and biases i.e. model = dict(W=..., vb=..., hb=...)
         :param grad: Dictionary of gradients i.e. model = dict(W=..., vb=..., hb=...) #same keys
         :param epoch: int

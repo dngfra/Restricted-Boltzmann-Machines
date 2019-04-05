@@ -76,6 +76,7 @@ weights = np.asarray(machine.weights)
 
 plot_image_grid(weights, image_shape,9, save = True)
 
+
 ``` 
 
 <img src="/pictures/weights.png" height="320"/>

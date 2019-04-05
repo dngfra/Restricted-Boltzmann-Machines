@@ -19,7 +19,7 @@ class monitoring():
 '''
 
 class RBM():
-    def __init__(self, visible_dim, hidden_dim, number_of_epochs, picture_shape, batch_size, training_algorithm='cd', n_test_samples=100, init_learning_rate = 0.8):
+    def __init__(self, visible_dim, hidden_dim, number_of_epochs, picture_shape, batch_size, k = 1, training_algorithm='cd', n_test_samples=100, init_learning_rate = 0.8):
         self._n_epoch = number_of_epochs
         self._v_dim = visible_dim
         self._h_dim = hidden_dim
@@ -29,6 +29,7 @@ class RBM():
         self.n_test_samples = n_test_samples
         self.training_algorithm = training_algorithm
         self.epoch = 1
+        self.k = k
         self.model = self.model()
         self._current_time = datetime.datetime.now().strftime("%d%m-%H%M%S")
         self._log_dir = 'logs/scalars/' + self._current_time + '/train'
@@ -57,7 +58,7 @@ class RBM():
 
     def from_saved_model(self,model_path):
         """
-
+        Build a model from the saved parameters.
         :param model_path: string
                            path of .h5 file containing dictionary of the model with  keys: {'weights', 'visible biases', 'hidden biases' }
         :return: loaded model
@@ -68,12 +69,6 @@ class RBM():
         self.visible_biases = model_dict['visible biases']
         self.hidden_biases = model_dict['hidden biases']
 
-        '''
-        model = h5py.File(model_path, 'r')
-        self.weights = np.array(model.get('weights'))
-        self.visible_biases = np.array(model.get('visible biases'))
-        self.hidden_biases = np.array(model.get('hidden biases'))
-        '''
         return self
 
     #@tf.function
@@ -95,14 +90,12 @@ class RBM():
     def sample(self, inpt = [] ,n_step_MC=1,p_0=0.5,p_1=0.5): #TODO: add p_0 and p_1 in the arguments
         """
         Sample from the RBM with n_step_MC steps markov chain.
-        :param inpt: array shape(visible_dim)
-                     It is possible to start the markov chain from a given point from the dataset or from a random state
-        :param n_step_MC: scalar
-                          number of markov chain steps to sample.
-        :return: visible_states_1: array shape(visible_dim)
-                 visible state after n_step_MC steps
-                 visible_probabilities_1: array shape(visible_dim)
-                 probabilities from which visible_states_1 is sampled
+        :param inpt: array shape(visible_dim), It is possible to start the markov chain from a given point from the dataset or from a random state
+        :param n_step_MC: scalar, number of markov chain steps to sample.
+        :return: visible_states_1: array shape(visible_dim) visible state after n_step_MC steps
+                 visible_probabilities_1: array shape(visible_dim) probabilities from which visible_states_1 is sampled
+                 inpt: array shape(picture), return the tarting point of the markov chain
+                 evolution_MC, list containing all the states of the markov chain till the sample
         """
         if len(inpt) == 0:
             #inpt = tf.constant(np.random.randint(2, size=self._v_dim), tf.float32)
@@ -120,13 +113,11 @@ class RBM():
         return visible_states_1,visible_probabilities_1,inpt,evolution_MC
 
     #@tf.function
-    def contr_divergence(self, data_point, n_step_MC=1, L2_l = 0): #TODO: I could use sample in the following
+    def contr_divergence(self, data_point, L2_l = 0):
         """
         Perform contrastive divergence given a data point.
         :param data_point: array, shape(visible layer)
                            data point sampled from the batch
-        :param n_step_MC: int
-                          tep of the markov chain for the sampling (CD1,CD2,...)
         :param L2_l: float, lambda for L2 regularization, default = 0 so no regularization performed
         :return: delta_w: array shape(hidden_dim, visible_dim)
                           Array of the same shape of the weight matrix which entries are the gradients dw_{ij}
@@ -139,7 +130,7 @@ class RBM():
         hidden_probabilities_0 = tf.sigmoid(tf.add(tf.tensordot(self.weights, data_point,1), self.hidden_biases)) # dimension W + 1 row for biases
         hidden_states_0 = self.calculate_state(hidden_probabilities_0)
         hidden_states_0_copy = hidden_states_0
-        for _ in range(n_step_MC): #gibbs update
+        for _ in range(self.k): #gibbs update
             visible_probabilities_1 = tf.sigmoid(tf.add(tf.tensordot(hidden_states_0,self.weights, 1), self.visible_biases))# dimension W + 1 row for biases
             visible_states_1 = self.calculate_state(visible_probabilities_1)
             hidden_probabilities_1 = tf.sigmoid(tf.add(tf.tensordot(visible_states_1, tf.transpose(self.weights),1), self.hidden_biases)) # dimension W + 1 row for biases
@@ -244,16 +235,6 @@ class RBM():
 
         return self
 
-    def exp_decay_l_r(self,epoch):
-        """
-        When training a model, it is often recommended to lower the learning rate as the training progresses.
-        This function applies an exponential decay function to a provided initial learning rate.
-        :param epoch: scalar
-        :return: scalar
-        """
-        k = 0.1
-        lrate = self._l_r * np.exp(-k * epoch)
-        return lrate
 
     def variable_summaries(self,var, step):
         with tf.name_scope('summaries'):
@@ -272,8 +253,9 @@ class RBM():
         The upgrade of the parameters is performed only at the end of each batch by taking the average of the gradients on the batch. 
         In the last part a random datapoint is sampled from the test set to calculate the error reconstruction. The entire procedure is repeted 
          _n_epochs times.
-        :param data: dict
-                     dictionary of numpy arrays with labels ['x_train','y_train','x_test', 'y_test']
+        :param data: dict, dictionary of numpy arrays with labels ['x_train','y_train','x_test', 'y_test']
+               optimizer: object optimizer
+
         :return: self
         """
         print('Start training...')
