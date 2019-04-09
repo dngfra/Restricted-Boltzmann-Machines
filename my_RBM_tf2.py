@@ -11,7 +11,7 @@ import h5py
 
 '''
 class monitoring():
-    def reconstruction_cross_e(): 
+    def reconstruction_cross_e():4 
     
     def ava_sq_error(): 
     
@@ -19,7 +19,7 @@ class monitoring():
 '''
 
 class RBM():
-    def __init__(self, visible_dim, hidden_dim, number_of_epochs, picture_shape, batch_size, k = 1, training_algorithm='cd', n_test_samples=100, init_learning_rate = 0.8):
+    def __init__(self, visible_dim, hidden_dim, number_of_epochs, picture_shape, batch_size,  training_algorithm='cd', k = 1, n_test_samples=100, init_learning_rate = 0.8):
         self._n_epoch = number_of_epochs
         self._v_dim = visible_dim
         self._h_dim = hidden_dim
@@ -155,6 +155,12 @@ class RBM():
         """
         return
 
+    def energy(self, visible_config):
+        hidden_probabilities = tf.sigmoid(tf.add(tf.tensordot(self.weights, visible_config,1), self.hidden_biases)) # dimension W + 1 row for biases
+        hidden_state = self.calculate_state(hidden_probabilities)
+        E = -np.inner(visible_config, self.visible_biases) -np.inner(hidden_state,self.hidden_biases) -np.inner(hidden_state, tf.tensordot(self.weights,visible_config,1))
+
+        return E[0]
 
 
     def reconstruction_cross_entropy(self,test_points, plot=False):
