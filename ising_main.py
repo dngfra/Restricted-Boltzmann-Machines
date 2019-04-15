@@ -1,3 +1,6 @@
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
 import numpy as np
 import tensorflow as tf
 from sklearn.preprocessing import Binarizer
@@ -9,13 +12,14 @@ import itertools
 import os
 from optimizer import Optimizer
 
+
 datah5 = dd.io.load('data/ising/ising_data_complete.hdf5')
 
 #Transform -1 in 0 and take spin up as standard configuration
 binarizer = Binarizer(threshold=0)
 keys = list(datah5.keys())
 #put here the temperature from keys that you want to use for the training
-class_names = ['T=1.000000', 'T=2.269184', 'T=3.000000']
+class_names = ['T=2.186995', 'T=2.269184', 'T=3.000000']
 datah5_norm={}
 data_bin={}
 for key in keys:
@@ -39,7 +43,8 @@ x_test = x_test.reshape(x_test.shape[0],-1).astype(np.float32)
 data = {"x_train": x_train ,"y_train": y_train,"x_test": x_test,"y_test": y_test}
 
 #Create a restricted boltzmann machines
-machine = RBM(x_train[0].shape[0], 300, 100, (32, 32), 32)
+machine = RBM(x_train[0].shape[0], 300, 100, (32, 32), 32,'cd')
+
 optimus = Optimizer(machine, 0.1, opt = 'adam')
 #Train the machine
 machine.train(data,optimus)

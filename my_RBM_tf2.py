@@ -7,6 +7,7 @@ from tqdm import tqdm
 import random
 import matplotlib.pyplot as plt
 import deepdish as dd
+from sklearn.neighbors import NearestNeighbors
 import h5py
 
 '''
@@ -87,7 +88,7 @@ class RBM():
    
 
     #@tf.function
-    def sample(self, inpt = [] ,n_step_MC=1,p_0=0.5,p_1=0.5): #TODO: add p_0 and p_1 in the arguments
+    def sample(self, inpt = [] ,n_step_MC=1,p_0=0.5,p_1=0.5):
         """
         Sample from the RBM with n_step_MC steps markov chain.
         :param inpt: array shape(visible_dim), It is possible to start the markov chain from a given point from the dataset or from a random state
@@ -109,8 +110,23 @@ class RBM():
             hidden_probabilities_1 = tf.sigmoid(tf.add(tf.tensordot(visible_states_1, tf.transpose(self.weights),1), self.hidden_biases)) # dimension W + 1 row for biases
             hidden_states_1 = self.calculate_state(hidden_probabilities_1)
             hidden_states_0 = hidden_states_1
-            evolution_MC.append(visible_states_1)
+            evolution_MC.append(visible_states_1.numpy())
         return visible_states_1,visible_probabilities_1,inpt,evolution_MC
+
+    def simple_sample(self, inpt = [] ,n_step_MC=1,p_0=0.5,p_1=0.5):
+        if len(inpt) == 0:
+        # inpt = tf.constant(np.random.randint(2, size=self._v_dim), tf.float32)
+            inpt = tf.constant(np.random.choice([0, 1], size=self._v_dim, p=[p_0, p_1]), tf.float32)
+        hidden_probabilities_0 = tf.sigmoid(tf.add(tf.tensordot(self.weights, inpt, 1), self.hidden_biases))  # dimension W + 1 row for biases
+        hidden_states_0 = self.calculate_state(hidden_probabilities_0)
+        for _ in range(n_step_MC):  # gibbs update
+            visible_probabilities_1 = tf.sigmoid(tf.add(tf.tensordot(hidden_states_0, self.weights, 1),self.visible_biases))  # dimension W + 1 row for biases
+            visible_states_1 = self.calculate_state(visible_probabilities_1)
+            hidden_probabilities_1 = tf.sigmoid(tf.add(tf.tensordot(visible_states_1, tf.transpose(self.weights), 1),self.hidden_biases))  # dimension W + 1 row for biases
+            hidden_states_1 = self.calculate_state(hidden_probabilities_1)
+            hidden_states_0 = hidden_states_1
+
+        return visible_states_1, visible_probabilities_1
 
     #@tf.function
     def contr_divergence(self, data_point, L2_l = 0):
@@ -174,7 +190,6 @@ class RBM():
         :return: scalar
                 Reconstruction cross entropy
         """
-        #TODO: do we need to average over multiple test point?
         
         r_ce_list=[]
         for vec in test_points: 
@@ -195,6 +210,14 @@ class RBM():
             plt.pause(3)
             plt.close()
 
+        return np.average(r_ce_list)
+
+    def recon_c_e(self,test_points):
+        r_ce_list=[]
+        for vec in test_points:
+            reconstruction,prob,_,_ = self.sample(inpt=vec)
+            loss = tf.keras.backend.binary_crossentropy(vec,prob).numpy()
+            r_ce_list.append(np.sum(loss))
         return np.average(r_ce_list)
 
     def average_squared_error(self, test_points):
@@ -237,10 +260,36 @@ class RBM():
 
         return pseudo
 
-    def KL_divergence(self):
+    def KL_divergence(self, data, n_points, k_neigh, MC_steps=1):
+        #todo: I should try with reconstructing point starting from other points
+        rnd_test_points_idx = np.random.randint(low=0, high=data['x_test'].shape[0], size=n_points)
+        rnd_test_points_idx_2 = np.random.randint(low=0, high=data['x_test'].shape[0], size=n_points)
+        test_points = data['x_test'][rnd_test_points_idx, :]
+        test_points_2 = data['x_test'][rnd_test_points_idx_2, :]
+        reconstruction = np.empty(test_points_2.shape)
+        for enum, vec in enumerate(test_points_2):
+            reconstruction[enum] = self.sample(inpt=vec, n_step_MC=MC_steps)[0].numpy()
+        nbrs_data = NearestNeighbors(n_neighbors=k_neigh, algorithm='ball_tree', metric='jaccard')
+        nbrs_data.fit(test_points)
+        nbrs_model = NearestNeighbors(n_neighbors=k_neigh, algorithm='ball_tree', metric='jaccard')
+        nbrs_model.fit(reconstruction)
 
-        return self
+        rho, _ = nbrs_data.kneighbors(test_points)
+        nu, _ = nbrs_model.kneighbors(test_points)
 
+        rho_inv, _ = nbrs_data.kneighbors(reconstruction)
+        nu_inv, _ = nbrs_model.kneighbors(reconstruction)
+
+        l = 0
+        l_inv = 0
+        # -2 is needed because in rho the first distance is always 0 and then with the point itself that we should not consider,
+        #to effectively pick the k-th neigh w.r.t test points and reconstructions we have to take the k-th in rho and the k-th -1 in nu.
+        for i in range(n_points):
+            l += np.log(nu[i, k_neigh-2] / rho[i, k_neigh-1])
+            l_inv += np.log(rho_inv[i, k_neigh-2] / nu_inv[i, k_neigh-1])
+        DKL = self._v_dim / n_points * l + np.log(n_points / (n_points - 1))
+        DKL_inv = self._v_dim / n_points * l_inv + np.log(n_points / (n_points - 1))
+        return DKL, DKL_inv
 
     def variable_summaries(self,var, step):
         with tf.name_scope('summaries'):
@@ -301,20 +350,29 @@ class RBM():
             #test every epoch
             np.random.shuffle(data['x_test'])
             rnd_test_points_idx = np.random.randint(low = 0,high = data['x_test'].shape[0], size=self.n_test_samples) #sample size random points indexes from test
-            with tf.name_scope('Errors'): #TODO: fix the sample and not the point
+            with tf.name_scope('Errors'): #TODO: I should computer the reconstruction once and use it inside all these estimatiojs
                 rec_error = self.reconstruction_cross_entropy(data['x_test'][rnd_test_points_idx,:]) #TODO: add random test datapoint
                 sq_error = self.average_squared_error(data['x_test'][rnd_test_points_idx,:])
                 free_energy = self.free_energy(data['x_test'][rnd_test_points_idx[0],:])
                 pseudo_log = self.pseudo_log_likelihood(data['x_test'][rnd_test_points_idx[0],:])
+                recon_c_e = self.recon_c_e(data['x_test'][rnd_test_points_idx,:])
+                DKL, DKL_inv = self.KL_divergence(data,1000,7)
                 tf.summary.scalar('rec_error', rec_error, step = epoch)
                 tf.summary.scalar('squared_error', sq_error, step = epoch)
                 tf.summary.scalar('Free Energy', free_energy, step = epoch)
                 tf.summary.scalar('Pseudo log likelihood', pseudo_log, step=epoch)
+                tf.summary.scalar('Binary cross entropy', recon_c_e, step=epoch)
+                tf.summary.scalar('KL divergence', DKL, step=epoch)
+                tf.summary.scalar('inverse KL divergence', DKL_inv, step=epoch)
             with tf.name_scope('Weights'):
                 self.variable_summaries(self.weights, step = epoch)
             with tf.name_scope('Hidden biases'):
                 self.variable_summaries(self.hidden_biases, step = epoch)
             with tf.name_scope('Visible biases'):
                 self.variable_summaries(self.visible_biases, step=epoch)
+
+            reconstruction_plot,prob,inpt,_ = self.sample(inpt=data['x_test'][rnd_test_points_idx[0],:])
+            pic = tf.concat([tf.reshape(inpt,(1,784)),prob,reconstruction_plot],0)
+            tf.summary.image('Reconstruction pictures ',tf.reshape(pic,(3,self._picture_shape[0],self._picture_shape[1],1)),max_outputs=100,step = epoch)
 
             print("epoch %d" % (epoch + 1),"Rec error: %s" % np.asarray(rec_error),"sq_error %s" % np.asarray(sq_error))

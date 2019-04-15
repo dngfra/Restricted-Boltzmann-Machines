@@ -29,7 +29,7 @@ np.random.shuffle(x_train_binary)
 np.random.shuffle(x_test_binary)
 
 #create dictionary of data
-data = {"x_train": x_train_binary ,"y_train": y_train,"x_test": x_test_binary,"y_test": y_test}
+data = {"x_train": x_train_binary[:1600] ,"y_train": y_train[:1600],"x_test": x_test_binary[:1600],"y_test": y_test[:1600]}
 
 #Create a restricted boltzmann machines
 machine = RBM(x_train_binary[0].shape[0], 200, 100,(28,28), 32, 'cd')
