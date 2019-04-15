@@ -43,7 +43,7 @@ x_test = x_test.reshape(x_test.shape[0],-1).astype(np.float32)
 data = {"x_train": x_train ,"y_train": y_train,"x_test": x_test,"y_test": y_test}
 
 #Create a restricted boltzmann machines
-machine = RBM(x_train[0].shape[0], 300, 100, (32, 32), 32,'cd')
+machine = RBM(x_train[0].shape[0], 600, 100, (32, 32), 32,'cd')
 
 optimus = Optimizer(machine, 0.1, opt = 'adam')
 #Train the machine
