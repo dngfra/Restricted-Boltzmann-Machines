@@ -372,7 +372,7 @@ class RBM():
                 self.variable_summaries(self.visible_biases, step=epoch)
 
             reconstruction_plot,prob,inpt,_ = self.sample(inpt=data['x_test'][rnd_test_points_idx[0],:])
-            pic = tf.concat([tf.reshape(inpt,(1,784)),prob,reconstruction_plot],0)
+            pic = tf.concat([tf.reshape(inpt,(1,self._v_dim)),prob,reconstruction_plot],0)
             tf.summary.image('Reconstruction pictures ',tf.reshape(pic,(3,self._picture_shape[0],self._picture_shape[1],1)),max_outputs=100,step = epoch)
 
             print("epoch %d" % (epoch + 1),"Rec error: %s" % np.asarray(rec_error),"sq_error %s" % np.asarray(sq_error))
