@@ -158,7 +158,7 @@ class RBM():
         delta_w = tf.add(vh_0, - vh_1) +L2_l*self.weights
         delta_vb = tf.add(data_point, - visible_states_1) + L2_l*self.visible_biases
         delta_hb = tf.add(hidden_states_0_copy, - hidden_states_1) + L2_l*self.hidden_biases
-        return delta_w, delta_vb, delta_hb, visible_states_1
+        return delta_w, delta_vb, delta_hb #, visible_states_1
 
 
     #@tf.function
@@ -336,7 +336,7 @@ class RBM():
                 elif self.training_algorithm == 'pcd':
                     start_point = x_train_mini[np.random.randint(0,self._batch_size,1)].reshape(self._v_dim)
                     for ind in range(self._batch_size):
-                        batch_dw[:, :, ind], batch_dvb[:, ind], batch_dhb[:, ind], last_state = self.contr_divergence(start_point)
+                        batch_dw[:, :, ind], batch_dvb[:, ind], batch_dhb[:, ind], last_state = self.contr_divergence(start_point) #I removed last_state from output of contrastive divergence
                         start_point = tf.reshape(last_state,(self._v_dim,))
 
                 self.grad_dict = {'weights': np.average(batch_dw,2),

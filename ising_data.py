@@ -44,10 +44,10 @@ def move(x):
     return x
 
 
-L = 32 # size of the system
+L = 128 # size of the system
 J = 1 # coupling constant
 Nthermalization = 100*L**3 # number of thermalization steps
-Nconfig = 1000 # number of configurations
+Nconfig = 10000 # number of configurations
 configs = np.zeros((Nconfig, L, L), dtype=np.int8) # configuration storage
 
 # read in temperature
