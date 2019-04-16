@@ -10,7 +10,7 @@ from bokeh.plotting import figure
 from bokeh.io import export_svgs
 
 machine = RBM(32*32, 600, 100, (32, 32), 32,'cd')
-machine.from_saved_model('/cluster/home/fdangelo/RBM/Restricted-Boltzmann-Machines/results/models')
+machine.from_saved_model('/cluster/home/fdangelo/RBM/Restricted-Boltzmann-Machines/results/models/1604-004823model.h5')
 datah5 = dd.io.load('/cluster/home/fdangelo/RBM/Restricted-Boltzmann-Machines/data/ising/ising_data_complete.hdf5')
 data_bin ={}
 datah5_norm = {}
