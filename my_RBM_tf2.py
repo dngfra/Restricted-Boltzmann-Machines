@@ -323,13 +323,15 @@ class RBM():
             #with tf.name_scope('Learning rate'):
                 #learning_rate = self.exp_decay_l_r(epoch)
             for i in tqdm(range(0, data['x_train'].shape[0], self._batch_size)):
+
+                '''
                 x_train_mini = data['x_train'][i:i+self._batch_size]
                 batch_dw = np.zeros((self._h_dim, self._v_dim, self._batch_size)) #d_w,d_v,d_h don't know why but this is not working
                 batch_dvb = np.zeros((self._v_dim, self._batch_size))
                 batch_dhb = np.zeros((self._h_dim, self._batch_size))
 
                 # I should create an optimizer class at the moment is just if
-                '''
+
                 if self.training_algorithm == 'cd':
                     for ind,vec in enumerate(x_train_mini):
                         batch_dw[:,:,ind],batch_dvb[:,ind],batch_dhb[:,ind] = self.contr_divergence(vec, L2_l=0) #d_w,d_v,d_h not working get lost to write down the values
@@ -349,7 +351,7 @@ class RBM():
                 #Parallelized
                 if self.training_algorithm == 'cd':
                     pool2 = mp.Pool(8)
-                    results = pool2.map_async(self.contr_divergence, [data['x_train'][j] for j in range(i, i+self._batch_size-1)])
+                    results = pool2.map_async(self.contr_divergence, data['x_train'][i:i+self._batch_size].tolist())
                     pool2.close()
                 upd = np.array(results.get())
                 mean_upd = np.average(upd,0)
