@@ -315,6 +315,7 @@ class RBM():
         :return: self
         """
         print('Start training...')
+        tf.debugging.set_log_device_placement(True)
         for epoch in range(1,self._n_epoch+1):
             self.epoch = epoch
             #sys.stdout.write('\r')
