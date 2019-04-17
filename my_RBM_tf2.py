@@ -350,7 +350,7 @@ class RBM():
                 '''
                 #Parallelized
                 if self.training_algorithm == 'cd':
-                    pool2 = mp.Pool(8)
+                    pool2 = mp.Pool(16)
                     results = pool2.map_async(self.contr_divergence, data['x_train'][i:i+self._batch_size].tolist())
                     pool2.close()
                 upd = np.array(results.get())
