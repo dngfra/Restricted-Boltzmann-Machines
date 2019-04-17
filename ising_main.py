@@ -12,7 +12,6 @@ import itertools
 import os
 from optimizer import Optimizer
 
-tf.debugging.set_log_device_placement(True)
 datah5 = dd.io.load('data/ising/ising_data_complete.hdf5')
 
 #Transform -1 in 0 and take spin up as standard configuration
