@@ -43,7 +43,7 @@ class RBM():
         self.visible_biases = tf.Variable(tf.random.uniform([1, self._v_dim], 0, 0.1), tf.float32, name="visible_biases")
         self.hidden_biases = tf.Variable(tf.random.uniform([1, self._h_dim], 0, 0.1), tf.float32, name="hidden_biases")
         self.weights = tf.Variable(tf.random.normal([self._h_dim, self._v_dim], mean = 0.0, stddev = 0.1), tf.float32, name="weights")
-        self.model_dict = {'weights': self.weights, 'visible biases': self.visible_biases, 'hidden biases': self.hidden_biases}
+        self.model_dict = {'weights': self.weights, 'visible_biases': self.visible_biases, 'hidden_biases': self.hidden_biases}
         return
 
     def update_model(self):
@@ -52,24 +52,24 @@ class RBM():
 
     def save_model(self):
         """
-        Save the current RBM model as .h5 file dictionary with  keys: {'weights', 'visible biases', 'hidden_biases' }
+        Save the current RBM model as .h5 file dictionary with  keys: {'weights', 'visible_biases', 'hidden_biases' }
         """
-        model_dict_save = {'weights': self.weights.numpy(), 'visible biases': self.visible_biases.numpy(),
-                           'hidden biases': self.hidden_biases.numpy()}
+        model_dict_save = {'weights': self.weights.numpy(), 'visible_biases': self.visible_biases.numpy(),
+                           'hidden_biases': self.hidden_biases.numpy()}
         return dd.io.save('results/models/'+self._current_time+'model.h5', model_dict_save)
 
     def from_saved_model(self,model_path):
         """
         Build a model from the saved parameters.
         :param model_path: string
-                           path of .h5 file containing dictionary of the model with  keys: {'weights', 'visible biases', 'hidden biases' }
+                           path of .h5 file containing dictionary of the model with  keys: {'weights', 'visible_biases', 'hidden_biases' }
         :return: loaded model
         """
 
         model_dict = dd.io.load(model_path)
         self.weights = model_dict['weights']
-        self.visible_biases = model_dict['visible biases']
-        self.hidden_biases = model_dict['hidden biases']
+        self.visible_biases = model_dict['visible_biases']
+        self.hidden_biases = model_dict['hidden_biases']
 
         return self
 
@@ -139,9 +139,9 @@ class RBM():
         :return: delta_w: array shape(hidden_dim, visible_dim)
                           Array of the same shape of the weight matrix which entries are the gradients dw_{ij}
                  delta_vb: array, shape(visible_dim)
-                           Array of the same shape of the visible biases which entries are the gradients d_vb_i
+                           Array of the same shape of the visible_biases which entries are the gradients d_vb_i
                  delta_vb: array, shape(hidden_dim)
-                           Array of the same shape of the hidden biases which entries are the gradients d_hb_i
+                           Array of the same shape of the hidden_biases which entries are the gradients d_hb_i
 
         """
         hidden_probabilities_0 = tf.sigmoid(tf.add(tf.tensordot(self.weights, data_point,1), self.hidden_biases)) # dimension W + 1 row for biases
@@ -241,7 +241,7 @@ class RBM():
         """
         Compute the free energy of the RBM, it is useful to compute the pseudologlikelihood.
         F(v) = - log \sum_h e^{-E(v,h)} = -bv - \sum_i \log(1 + e^{c_i + W_i v}) where v= visible state, h = hidden state,
-        b = visible biases, c = hidden biases, W_i = i-th column of the weights matrix
+        b = visible_biases, c = hidden_biases, W_i = i-th column of the weights matrix
         :param test_point: array, shape(visible_dim)
                            random point sampled from the test set
         :return: scalar
@@ -344,8 +344,8 @@ class RBM():
                         start_point = tf.reshape(last_state,(self._v_dim,))
 
                 self.grad_dict = {'weights': np.average(batch_dw,2),
-                                   'visible biases': np.average(batch_dvb,1),
-                                   'hidden biases': np.average(batch_dhb,1)}
+                                   'visible_biases': np.average(batch_dvb,1),
+                                   'hidden_biases': np.average(batch_dhb,1)}
 
                 '''
                 #Parallelized
@@ -356,8 +356,8 @@ class RBM():
                 upd = np.array(results.get())
                 mean_upd = np.average(upd,0)
                 self.grad_dict = {'weights': mean_upd[0],
-                                   'visible biases': mean_upd[1],
-                                   'hidden biases': mean_upd[2]}
+                                   'visible_biases': mean_upd[1],
+                                   'hidden_biases': mean_upd[2]}
 
                 optimizer.fit()
             #Save model every epoch
@@ -382,9 +382,9 @@ class RBM():
                 tf.summary.scalar('inverse KL divergence', DKL_inv, step=epoch)
             with tf.name_scope('Weights'):
                 self.variable_summaries(self.weights, step = epoch)
-            with tf.name_scope('Hidden biases'):
+            with tf.name_scope('hidden_biases'):
                 self.variable_summaries(self.hidden_biases, step = epoch)
-            with tf.name_scope('Visible biases'):
+            with tf.name_scope('visible_biases'):
                 self.variable_summaries(self.visible_biases, step=epoch)
 
             reconstruction_plot,prob,inpt,_ = self.sample(inpt=data['x_test'][rnd_test_points_idx[0],:])
