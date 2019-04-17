@@ -8,7 +8,8 @@ import random
 import matplotlib.pyplot as plt
 import deepdish as dd
 from sklearn.neighbors import NearestNeighbors
-import h5py
+import multiprocessing.dummy as mp
+
 
 '''
 class monitoring():
@@ -158,7 +159,7 @@ class RBM():
         delta_w = tf.add(vh_0, - vh_1) +L2_l*self.weights
         delta_vb = tf.add(data_point, - visible_states_1) + L2_l*self.visible_biases
         delta_hb = tf.add(hidden_states_0_copy, - hidden_states_1) + L2_l*self.hidden_biases
-        return delta_w, delta_vb, delta_hb #, visible_states_1
+        return delta_w.numpy(), delta_vb.numpy(), delta_hb.numpy() #, visible_states_1
 
 
     #@tf.function
@@ -328,9 +329,10 @@ class RBM():
                 batch_dhb = np.zeros((self._h_dim, self._batch_size))
 
                 # I should create an optimizer class at the moment is just if
+                '''
                 if self.training_algorithm == 'cd':
                     for ind,vec in enumerate(x_train_mini):
-                        batch_dw[:,:,ind],batch_dvb[:,ind],batch_dhb[:,ind],_ = self.contr_divergence(vec, L2_l=0) #d_w,d_v,d_h not working get lost to write down the values
+                        batch_dw[:,:,ind],batch_dvb[:,ind],batch_dhb[:,ind] = self.contr_divergence(vec, L2_l=0) #d_w,d_v,d_h not working get lost to write down the values
 
                 #Persistent contrastive divergence
                 elif self.training_algorithm == 'pcd':
@@ -342,6 +344,18 @@ class RBM():
                 self.grad_dict = {'weights': np.average(batch_dw,2),
                                    'visible biases': np.average(batch_dvb,1),
                                    'hidden biases': np.average(batch_dhb,1)}
+
+                '''
+                #Parallelized
+                if self.training_algorithm == 'cd':
+                    pool2 = mp.Pool(8)
+                    results = pool2.map_async(self.contr_divergence, [data['x_train'][j] for j in range(i, i+self._batch_size-1)])
+                    pool2.close()
+                upd = np.array(results.get())
+                mean_upd = np.average(upd,0)
+                self.grad_dict = {'weights': mean_upd[0],
+                                   'visible biases': mean_upd[1],
+                                   'hidden biases': mean_upd[2]}
 
                 optimizer.fit()
             #Save model every epoch
