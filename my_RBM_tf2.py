@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import deepdish as dd
 from sklearn.neighbors import NearestNeighbors
 import multiprocessing.dummy as mp
-
+import yaml
 
 '''
 class monitoring():
@@ -58,11 +58,27 @@ class RBM():
                            'hidden_biases': self.hidden_biases.numpy()}
         return dd.io.save('results/models/'+self._current_time+'model.h5', model_dict_save)
 
+    def save_param(self, data = None):
+        to_save = {}
+
+        if data is not None :
+            to_save['data'] = data
+
+        variables = self.__dict__
+        not_save = ['_file_writer', 'model', 'visible_biases', 'hidden_biases', 'weights', 'model_dict']
+        for key,value in variables.items():
+            if key not in not_save:
+                to_save[key] = value
+        with open('results/models/'+self._current_time+'parameters.yml', 'w') as yaml_file:
+            yaml.dump(to_save, stream=yaml_file, default_flow_style=False)
+
     def from_saved_model(self,model_path):
         """
         Build a model from the saved parameters.
+
         :param model_path: string
                            path of .h5 file containing dictionary of the model with  keys: {'weights', 'visible_biases', 'hidden_biases' }
+
         :return: loaded model
         """
 
@@ -78,7 +94,9 @@ class RBM():
         """
         Given the probability(x'=1|W,b) = sigmoid(Wx+b) computes the next state by sampling from the relative binomial distribution.
         x and x' can be the visible and hidden layers respectively or viceversa.
+
         :param probability: array, shape(visible_dim) or shape(hidden_dim)
+
         :return: array , shape(visible_dim) or shape(hidden_dim)
                  0,1 state of each unit in the layer
         """
@@ -92,11 +110,17 @@ class RBM():
     def sample(self, inpt = [] ,n_step_MC=1,p_0=0.5,p_1=0.5):
         """
         Sample from the RBM with n_step_MC steps markov chain.
+
         :param inpt: array shape(visible_dim), It is possible to start the markov chain from a given point from the dataset or from a random state
+
         :param n_step_MC: scalar, number of markov chain steps to sample.
+
         :return: visible_states_1: array shape(visible_dim) visible state after n_step_MC steps
+
                  visible_probabilities_1: array shape(visible_dim) probabilities from which visible_states_1 is sampled
+
                  inpt: array shape(picture), return the tarting point of the markov chain
+
                  evolution_MC, list containing all the states of the markov chain till the sample
         """
         if len(inpt) == 0:
@@ -133,13 +157,18 @@ class RBM():
     def contr_divergence(self, data_point, L2_l = 0):
         """
         Perform contrastive divergence given a data point.
+
         :param data_point: array, shape(visible layer)
                            data point sampled from the batch
+
         :param L2_l: float, lambda for L2 regularization, default = 0 so no regularization performed
+
         :return: delta_w: array shape(hidden_dim, visible_dim)
                           Array of the same shape of the weight matrix which entries are the gradients dw_{ij}
+
                  delta_vb: array, shape(visible_dim)
                            Array of the same shape of the visible_biases which entries are the gradients d_vb_i
+
                  delta_vb: array, shape(hidden_dim)
                            Array of the same shape of the hidden_biases which entries are the gradients d_hb_i
 
@@ -184,6 +213,7 @@ class RBM():
         """
         Compute the reconstruction cross entropy = - \Sum_[i=1]^d z_i log(p(z_i)) + (1-z_i) log(1-p(z_i)) where i
         is the i-th component of the reconstructed vector and p(z_i) = sigmoid(Wx+b)_i.
+
         :param test_point: array like
                            Random point sampled from the test set
         :param plot: bool
@@ -224,6 +254,7 @@ class RBM():
     def average_squared_error(self, test_points):
         """
         Compute the mean squared error between a test vector and its reconstruction performed by the RBM, ||x - z||^2.  
+
         :param test_point: array, shape(visible_dim)
                            data point to test the reconstruction
         :return: sqr: float
@@ -270,9 +301,9 @@ class RBM():
         reconstruction = np.empty(test_points_2.shape)
         for enum, vec in enumerate(test_points_2):
             reconstruction[enum] = self.sample(inpt=vec, n_step_MC=MC_steps)[0].numpy()
-        nbrs_data = NearestNeighbors(n_neighbors=k_neigh, algorithm='ball_tree', metric='jaccard')
+        nbrs_data = NearestNeighbors(n_neighbors=k_neigh, algorithm='ball_tree', metric='jaccard', n_jobs =-1)
         nbrs_data.fit(test_points)
-        nbrs_model = NearestNeighbors(n_neighbors=k_neigh, algorithm='ball_tree', metric='jaccard')
+        nbrs_model = NearestNeighbors(n_neighbors=k_neigh, algorithm='ball_tree', metric='jaccard', n_jobs =-1)
         nbrs_model.fit(reconstruction)
 
         rho, _ = nbrs_data.kneighbors(test_points)
@@ -309,6 +340,7 @@ class RBM():
         The upgrade of the parameters is performed only at the end of each batch by taking the average of the gradients on the batch. 
         In the last part a random datapoint is sampled from the test set to calculate the error reconstruction. The entire procedure is repeted 
          _n_epochs times.
+
         :param data: dict, dictionary of numpy arrays with labels ['x_train','y_train','x_test', 'y_test']
                optimizer: object optimizer
 

@@ -11,6 +11,7 @@ import deepdish as dd
 import itertools
 import os
 from optimizer import Optimizer
+import yaml
 
 datah5 = dd.io.load('data/ising/ising_data_complete.hdf5')
 
@@ -45,5 +46,9 @@ data = {"x_train": x_train ,"y_train": y_train,"x_test": x_test,"y_test": y_test
 machine = RBM(x_train[0].shape[0], 1200, 100, (32, 32), 128,'cd')
 
 optimus = Optimizer(machine, 0.1, opt = 'adam')
+
+machine.save_param(data = class_names)
 #Train the machine
 machine.train(data,optimus)
+
+
