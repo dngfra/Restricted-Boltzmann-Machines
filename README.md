@@ -34,7 +34,7 @@ from my_RBM_tf2 import RBM
 from optimizer import Optimizer
 from utils import plot_image_grid, plot_single_image, plot_input_sample
 
-machine = RBM(784, 200, 100,(28,28), 32, 'cd')
+machine = RBM(784, 200, 100,(28,28), 128, 'cd')
 optimus = Optimizer(machine, 0.1, opt = 'adam')
 ``` 
 Given that we are dealing with Bernoulli RBM the input data must be binarized (0,1) (see main.py for more details). 
@@ -52,7 +52,7 @@ Given some trained parameters, we want to rebuild our model from the saved confi
 As we know, to sample a new point we have to perform alternating Gibbs sampling between the visible and hidden layers, using *.sample* we can do this 
 starting the Markov chain from a real datapoint (if we specify *inpt*) or from random noise for which we can specify the distribution  of zeros and ones (default 0.5). 
 ``` python
-machine = RBM(784, 200, 100, (28,28), 32)
+machine = RBM(784, 200,100,(28,28), 128, 'cd')
 machine.from_saved_model(path)
 
 visible_states_1,visible_probabilities_1,inpt,evolution_MC= machine.sample(n_step_MC=5000)
