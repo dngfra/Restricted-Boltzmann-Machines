@@ -10,10 +10,13 @@ from my_RBM_tf2 import RBM
 import deepdish as dd
 import itertools
 import os
+import os
 from optimizer import Optimizer
 import yaml
 
-datah5 = dd.io.load('/Users/fdangelo/PycharmProjects/myRBM/data/ising/ising_data_L32.hdf5')
+here = os.path.dirname(os.path.abspath(__file__))
+
+datah5 = dd.io.load(here+'/data/ising/ising_data_L32.hdf5')
 
 #Transform -1 in 0 and take spin up as standard configuration
 binarizer = Binarizer(threshold=0)
