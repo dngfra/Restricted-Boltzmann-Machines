@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import deepdish as dd
 from sklearn.neighbors import NearestNeighbors
 import multiprocessing.dummy as mp
-
+import yaml
 
 '''
 class monitoring():
@@ -21,7 +21,7 @@ class monitoring():
 '''
 
 class RBM():
-    def __init__(self, visible_dim, hidden_dim, number_of_epochs, picture_shape, batch_size,  training_algorithm='cd', k = 1, n_test_samples=100, init_learning_rate = 0.8):
+    def __init__(self, visible_dim, hidden_dim, number_of_epochs, picture_shape, batch_size,  training_algorithm='cd', k = 1, n_test_samples=500, init_learning_rate = 0.8):
         self._n_epoch = number_of_epochs
         self._v_dim = visible_dim
         self._h_dim = hidden_dim
@@ -40,9 +40,9 @@ class RBM():
 
     #@tf.function
     def model(self):
-        self.visible_biases = tf.Variable(tf.random.uniform([1, self._v_dim], 0, 0.1), tf.float32, name="visible_biases")
-        self.hidden_biases = tf.Variable(tf.random.uniform([1, self._h_dim], 0, 0.1), tf.float32, name="hidden_biases")
-        self.weights = tf.Variable(tf.random.normal([self._h_dim, self._v_dim], mean = 0.0, stddev = 0.1), tf.float32, name="weights")
+        self.visible_biases = tf.Variable(tf.random.uniform([1, self._v_dim], 0, 0.1,seed = 42), tf.float32, name="visible_biases")
+        self.hidden_biases = tf.Variable(tf.random.uniform([1, self._h_dim], 0, 0.1, seed = 42), tf.float32, name="hidden_biases")
+        self.weights = tf.Variable(tf.random.normal([self._h_dim, self._v_dim], mean = 0.0, stddev = 0.1, seed = 42), tf.float32, name="weights")
         self.model_dict = {'weights': self.weights, 'visible_biases': self.visible_biases, 'hidden_biases': self.hidden_biases}
         return
 
@@ -58,11 +58,27 @@ class RBM():
                            'hidden_biases': self.hidden_biases.numpy()}
         return dd.io.save('results/models/'+self._current_time+'model.h5', model_dict_save)
 
+    def save_param(self, data = None):
+        to_save = {}
+
+        if data is not None :
+            to_save['data'] = data
+
+        variables = self.__dict__
+        not_save = ['_file_writer', 'model', 'visible_biases', 'hidden_biases', 'weights', 'model_dict']
+        for key,value in variables.items():
+            if key not in not_save:
+                to_save[key] = value
+        with open('results/models/'+self._current_time+'parameters.yml', 'w') as yaml_file:
+            yaml.dump(to_save, stream=yaml_file, default_flow_style=False)
+
     def from_saved_model(self,model_path):
         """
         Build a model from the saved parameters.
+
         :param model_path: string
                            path of .h5 file containing dictionary of the model with  keys: {'weights', 'visible_biases', 'hidden_biases' }
+
         :return: loaded model
         """
 
@@ -73,30 +89,36 @@ class RBM():
 
         return self
 
-    #@tf.function
     def calculate_state(self, probability):
         """
         Given the probability(x'=1|W,b) = sigmoid(Wx+b) computes the next state by sampling from the relative binomial distribution.
         x and x' can be the visible and hidden layers respectively or viceversa.
+
         :param probability: array, shape(visible_dim) or shape(hidden_dim)
+
         :return: array , shape(visible_dim) or shape(hidden_dim)
                  0,1 state of each unit in the layer
         """
-        binom = tf.concat([1-probability,probability],0)
-        prob_re = tf.reshape(binom,(2,probability.get_shape()[1]))
-        #print("check summation probability:", tf.reduce_sum(prob_re,0)) # check prob summation to 1
-        return tf.reshape(tf.cast(tf.random.categorical(tf.math.log(tf.transpose(prob_re)),1), tf.float32), (1,probability.get_shape()[1]))
-   
 
-    #@tf.function
+        s = np.random.binomial(1, probability)
+        return s.astype(np.float32)
+
+
+        #@tf.function
     def sample(self, inpt = [] ,n_step_MC=1,p_0=0.5,p_1=0.5):
         """
         Sample from the RBM with n_step_MC steps markov chain.
+
         :param inpt: array shape(visible_dim), It is possible to start the markov chain from a given point from the dataset or from a random state
+
         :param n_step_MC: scalar, number of markov chain steps to sample.
+
         :return: visible_states_1: array shape(visible_dim) visible state after n_step_MC steps
+
                  visible_probabilities_1: array shape(visible_dim) probabilities from which visible_states_1 is sampled
+
                  inpt: array shape(picture), return the tarting point of the markov chain
+
                  evolution_MC, list containing all the states of the markov chain till the sample
         """
         if len(inpt) == 0:
@@ -111,35 +133,50 @@ class RBM():
             hidden_probabilities_1 = tf.sigmoid(tf.add(tf.tensordot(visible_states_1, tf.transpose(self.weights),1), self.hidden_biases)) # dimension W + 1 row for biases
             hidden_states_1 = self.calculate_state(hidden_probabilities_1)
             hidden_states_0 = hidden_states_1
-            evolution_MC.append(visible_states_1.numpy())
+            evolution_MC.append(visible_states_1.reshape(self._v_dim,))
         return visible_states_1,visible_probabilities_1,inpt,evolution_MC
 
-    def simple_sample(self, inpt = [] ,n_step_MC=1,p_0=0.5,p_1=0.5):
+    def parallel_sample(self, inpt = [] ,n_step_MC=1,p_0=0.5,p_1=0.5, n_chains = 1, save_evolution = False):
         if len(inpt) == 0:
-        # inpt = tf.constant(np.random.randint(2, size=self._v_dim), tf.float32)
-            inpt = tf.constant(np.random.choice([0, 1], size=self._v_dim, p=[p_0, p_1]), tf.float32)
-        hidden_probabilities_0 = tf.sigmoid(tf.add(tf.tensordot(self.weights, inpt, 1), self.hidden_biases))  # dimension W + 1 row for biases
+            inpt = np.random.choice([0, 1], size=(n_chains,self._v_dim), p=[p_0, p_1]).astype(np.float32)
+        else:
+            #check shape
+            if len(inpt.shape) != 2:
+                inpt = inpt.reshape(1,inpt.shape[0])
+        if save_evolution:
+            evolution = np.empty((n_step_MC,self._v_dim))
+            evolution[0] = inpt
+        hidden_probabilities_0 = tf.sigmoid(tf.tensordot(inpt, self.weights, axes=[[1], [1]]) + self.hidden_biases)  # dimension W + 1 row for biases
         hidden_states_0 = self.calculate_state(hidden_probabilities_0)
-        for _ in range(n_step_MC):  # gibbs update
-            visible_probabilities_1 = tf.sigmoid(tf.add(tf.tensordot(hidden_states_0, self.weights, 1),self.visible_biases))  # dimension W + 1 row for biases
+        for i in range(n_step_MC):  # gibbs update
+            visible_probabilities_1 = tf.sigmoid(tf.tensordot(hidden_states_0, self.weights, axes=[[1], [0]]) + self.visible_biases)  # dimension W + 1 row for biases
             visible_states_1 = self.calculate_state(visible_probabilities_1)
-            hidden_probabilities_1 = tf.sigmoid(tf.add(tf.tensordot(visible_states_1, tf.transpose(self.weights), 1),self.hidden_biases))  # dimension W + 1 row for biases
+            hidden_probabilities_1 = tf.sigmoid(tf.tensordot(visible_states_1, self.weights, axes=[[1], [1]]) + self.hidden_biases)  # dimension W + 1 row for biases
             hidden_states_1 = self.calculate_state(hidden_probabilities_1)
             hidden_states_0 = hidden_states_1
-
-        return visible_states_1, visible_probabilities_1
+            if save_evolution:
+                evolution[i] = visible_states_1
+        if save_evolution:
+            return visible_states_1, visible_probabilities_1,inpt, evolution
+        else:
+            return visible_states_1, visible_probabilities_1,inpt
 
     #@tf.function
     def contr_divergence(self, data_point, L2_l = 0):
         """
         Perform contrastive divergence given a data point.
+
         :param data_point: array, shape(visible layer)
                            data point sampled from the batch
+
         :param L2_l: float, lambda for L2 regularization, default = 0 so no regularization performed
+
         :return: delta_w: array shape(hidden_dim, visible_dim)
                           Array of the same shape of the weight matrix which entries are the gradients dw_{ij}
+
                  delta_vb: array, shape(visible_dim)
                            Array of the same shape of the visible_biases which entries are the gradients d_vb_i
+
                  delta_vb: array, shape(hidden_dim)
                            Array of the same shape of the hidden_biases which entries are the gradients d_hb_i
 
@@ -163,14 +200,24 @@ class RBM():
 
 
     #@tf.function
-    def persistent_contr_divergence(self, data):
-        """
-        Persistent CD [Tieleman08] uses another approximation for sampling from p(v,h).
-        It relies on a single Markov chain, which has a persistent state (i.e., not restarting
-        a chain for each observed example). For each parameter update, we extract new samples by
-        simply running the chain for k-steps. The state of the chain is then preserved for subsequent updates.
-        """
-        return
+    def parallel_cd(self, batch):
+        hidden_probabilities_0 = tf.sigmoid(tf.tensordot(batch, self.weights, axes=[[1], [1]]) + self.hidden_biases)  # dimension W + 1 row for biases
+        hidden_states_0 = self.calculate_state(hidden_probabilities_0)
+        hidden_states_0_copy = hidden_states_0.copy()
+        for _ in range(self.k):  # gibbs update
+            visible_probabilities_1 = tf.sigmoid(tf.tensordot(hidden_states_0, self.weights, axes=[[1], [0]]) + self.visible_biases)  # dimension W + 1 row for biases
+            visible_states_1 = self.calculate_state(visible_probabilities_1)
+            hidden_probabilities_1 = tf.sigmoid(tf.tensordot(visible_states_1, self.weights, axes=[[1], [1]]) + self.hidden_biases)  # dimension W + 1 row for biases
+            hidden_states_1 = self.calculate_state(hidden_probabilities_1)
+            hidden_states_0 = hidden_states_1
+
+        vh_0 = tf.tensordot(hidden_probabilities_0, batch, axes=[[0], [0]])
+        vh_1 = tf.tensordot(hidden_probabilities_1, visible_states_1, axes=[[0], [0]])
+        delta_w = (vh_0 - vh_1) / batch.shape[0]
+        delta_vb = np.average(batch - visible_states_1, 0)
+        delta_hb = np.average(hidden_probabilities_0 - hidden_probabilities_1, 0)
+
+        return delta_w.numpy(), delta_vb, delta_hb
 
     def energy(self, visible_config):
         hidden_probabilities = tf.sigmoid(tf.add(tf.tensordot(self.weights, visible_config,1), self.hidden_biases)) # dimension W + 1 row for biases
@@ -184,6 +231,7 @@ class RBM():
         """
         Compute the reconstruction cross entropy = - \Sum_[i=1]^d z_i log(p(z_i)) + (1-z_i) log(1-p(z_i)) where i
         is the i-th component of the reconstructed vector and p(z_i) = sigmoid(Wx+b)_i.
+
         :param test_point: array like
                            Random point sampled from the test set
         :param plot: bool
@@ -214,28 +262,25 @@ class RBM():
         return np.average(r_ce_list)
 
     def recon_c_e(self,test_points):
-        r_ce_list=[]
-        for vec in test_points:
-            reconstruction,prob,_,_ = self.sample(inpt=vec)
-            loss = tf.keras.backend.binary_crossentropy(vec,prob).numpy()
-            r_ce_list.append(np.sum(loss))
-        return np.average(r_ce_list)
+        reconstruction, prob, _ = self.parallel_sample(test_points)
+        loss = tf.keras.backend.binary_crossentropy(test_points, prob).numpy()
+        loss = np.sum(loss,1)
+        return np.average(loss)
 
     def average_squared_error(self, test_points):
         """
         Compute the mean squared error between a test vector and its reconstruction performed by the RBM, ||x - z||^2.  
+
         :param test_point: array, shape(visible_dim)
                            data point to test the reconstruction
         :return: sqr: float
                       error
         """
         ase_list=[]
-        for vec in test_points:
-            reconstruction= self.sample(inpt = vec)[0]
-            as_e = tf.pow(vec - reconstruction,2)
-            sqr = tf.reduce_sum(as_e,1)/self._v_dim
-            ase_list.append(sqr[0])
-            return np.mean(ase_list)
+        reconstruction, prob, _ = self.parallel_sample(test_points)
+        as_e = tf.pow(test_points - reconstruction, 2)
+        sqr = tf.reduce_sum(as_e, 1) / self._v_dim
+        return np.mean(sqr)
 
     def free_energy(self,test_point):
         """
@@ -267,12 +312,11 @@ class RBM():
         rnd_test_points_idx_2 = np.random.randint(low=0, high=data['x_test'].shape[0], size=n_points)
         test_points = data['x_test'][rnd_test_points_idx, :]
         test_points_2 = data['x_test'][rnd_test_points_idx_2, :]
-        reconstruction = np.empty(test_points_2.shape)
-        for enum, vec in enumerate(test_points_2):
-            reconstruction[enum] = self.sample(inpt=vec, n_step_MC=MC_steps)[0].numpy()
-        nbrs_data = NearestNeighbors(n_neighbors=k_neigh, algorithm='ball_tree', metric='jaccard')
+        #reconstruction = np.empty(test_points_2.shape)
+        reconstruction = self.parallel_sample(inpt=test_points_2, n_step_MC=MC_steps)[0]
+        nbrs_data = NearestNeighbors(n_neighbors=k_neigh, algorithm='ball_tree', metric='jaccard', n_jobs =-1)
         nbrs_data.fit(test_points)
-        nbrs_model = NearestNeighbors(n_neighbors=k_neigh, algorithm='ball_tree', metric='jaccard')
+        nbrs_model = NearestNeighbors(n_neighbors=k_neigh, algorithm='ball_tree', metric='jaccard', n_jobs =-1)
         nbrs_model.fit(reconstruction)
 
         rho, _ = nbrs_data.kneighbors(test_points)
@@ -292,6 +336,56 @@ class RBM():
         DKL_inv = self._v_dim / n_points * l_inv + np.log(n_points / (n_points - 1))
         return DKL, DKL_inv
 
+    def prob_beta(self,beta,points):
+        p_A = np.exp((1-beta)*np.inner(points,self.visible_biases))*np.product(1+np.exp((1-beta)*self.hidden_biases))
+        p_B = np.exp(beta*np.inner(points,self.visible_biases))*np.product(1+np.exp(beta*tf.tensordot(points, self.weights, axes=[[1], [1]]) + self.hidden_biases))
+
+        return p_A*p_B
+
+    def log_partition_function(self,batch,n_step=1, n_beta = 1000):
+        beta = np.linspace(0,1,n_beta)
+        rate = np.ones((beta.shape[0]-1, batch.shape[0], self._h_dim))
+        for k,b in enumerate(beta[:-1]):
+            hidden_probabilities_0_A = tf.sigmoid((1-b)*self.hidden_biases)  # dimension W + 1 row for biases
+            hidden_probabilities_0_B = tf.sigmoid(b*(tf.tensordot(batch, self.weights, axes=[[1], [1]]) + self.hidden_biases))  # dimension W + 1 row for biases
+            hidden_states_0_A = self.calculate_state(hidden_probabilities_0_A)
+            hidden_states_0_B = self.calculate_state(hidden_probabilities_0_B)
+
+            for _ in range(n_step):  # gibbs update
+                visible_probabilities_1_AB = tf.sigmoid((1-b)*self.visible_biases + b*(tf.tensordot(hidden_states_0_B, self.weights, axes=[[1], [0]]) + self.visible_biases)) # dimension W + 1 row for biases
+                visible_states_1_AB = self.calculate_state(visible_probabilities_1_AB)
+
+                hidden_probabilities_1_A = tf.sigmoid((1 - b) * self.hidden_biases)  # dimension W + 1 row for biases
+                hidden_probabilities_1_B = tf.sigmoid(b * (tf.tensordot(visible_states_1_AB, self.weights, axes=[[1], [1]]) + self.hidden_biases))  # dimension W + 1 row for biases
+                hidden_states_1_A = self.calculate_state(hidden_probabilities_1_A)
+                hidden_states_1_B = self.calculate_state(hidden_probabilities_1_B)
+
+                hidden_states_0_A = hidden_states_1_A
+                hidden_states_0_B = hidden_states_1_B
+            p_k = ((1 + np.exp((1 - b) * self.hidden_biases)) * (1 + np.exp(b * tf.tensordot(visible_states_1_AB, self.weights, axes=[[1], [1]]) + self.hidden_biases))).astype(np.float64)
+            p_k_1 = ((1 + np.exp((1 - beta[k+1]) * self.hidden_biases)) * (1 + np.exp(beta[k+1] * tf.tensordot(visible_states_1_AB, self.weights, axes=[[1], [1]]) + self.hidden_biases))).astype(np.float64) #p_(k)
+            rate_b = (p_k_1 / p_k).astype(np.float64)
+            rate[k] = rate_b
+        w = np.product(rate, 0)
+        logr_ais = np.sum(np.log(np.mean(w,0)))
+        logZ_A = np.sum(np.log(1+tf.exp(self.visible_biases))) + np.sum(np.log(1+tf.exp(self.hidden_biases))) #if needed add astype(np.float64)
+
+        return -logr_ais+logZ_A
+
+    def log_likelihood(self,points,test):
+        """
+
+        :param points: data points to calculate likelihood
+        :param test: some random points to start the gibbs sampling to estimate the partition function
+        :return: float
+        """
+        # probably I should calculate the partition function just once
+        log_partition_function = self.log_partition_function(test)
+        #a lot of dubts wheter I should calculate the partition function on test or train and if i should calculate the likelihood for all the points or not
+        log_L = np.inner(self.visible_biases.numpy(),points) + np.sum(np.log((1+np.exp(tf.tensordot(points.astype(np.float64), self.weights.numpy().astype(np.float64), axes=[[1], [1]]) + self.hidden_biases.numpy().astype(np.float64)))),1)
+
+        return - np.mean(log_L) + log_partition_function/points.shape[0]
+
     def variable_summaries(self,var, step):
         with tf.name_scope('summaries'):
             mean = tf.reduce_mean(var)
@@ -309,12 +403,14 @@ class RBM():
         The upgrade of the parameters is performed only at the end of each batch by taking the average of the gradients on the batch. 
         In the last part a random datapoint is sampled from the test set to calculate the error reconstruction. The entire procedure is repeted 
          _n_epochs times.
+
         :param data: dict, dictionary of numpy arrays with labels ['x_train','y_train','x_test', 'y_test']
                optimizer: object optimizer
 
         :return: self
         """
         print('Start training...')
+        test_fixed = np.random.randint(low=0, high=data['x_test'].shape[0], size=self.n_test_samples)
         for epoch in range(1,self._n_epoch+1):
             self.epoch = epoch
             #sys.stdout.write('\r')
@@ -323,6 +419,7 @@ class RBM():
             #with tf.name_scope('Learning rate'):
                 #learning_rate = self.exp_decay_l_r(epoch)
             for i in tqdm(range(0, data['x_train'].shape[0], self._batch_size)):
+
 
                 '''
                 x_train_mini = data['x_train'][i:i+self._batch_size]
@@ -348,17 +445,19 @@ class RBM():
                                    'hidden_biases': np.average(batch_dhb,1)}
 
                 '''
-                #Parallelized
                 if self.training_algorithm == 'cd':
-                    pool2 = mp.Pool(16)
-                    results = pool2.map_async(self.contr_divergence, data['x_train'][i:i+self._batch_size].tolist())
-                    pool2.close()
-                upd = np.array(results.get())
-                mean_upd = np.average(upd,0)
-                self.grad_dict = {'weights': mean_upd[0],
-                                   'visible_biases': mean_upd[1],
-                                   'hidden_biases': mean_upd[2]}
+                    x_train_mini = data['x_train'][i:i + self._batch_size]
+                    batch_dw, batch_dvb, batch_dhb= self.parallel_cd(x_train_mini)
 
+
+                elif self.training_algorithm == 'pcd':
+                    start_point = data['x_train'][i].reshape(self._v_dim)
+                    x_train_mini = np.array(self.sample(start_point,self._batch_size)[3])
+                    batch_dw, batch_dvb, batch_dhb = self.parallel_cd(x_train_mini)
+
+                self.grad_dict = {'weights': batch_dw,
+                                  'visible_biases': batch_dvb,
+                                  'hidden_biases': batch_dhb}
                 optimizer.fit()
             #Save model every epoch
             self.save_model()
@@ -373,6 +472,7 @@ class RBM():
                 pseudo_log = self.pseudo_log_likelihood(data['x_test'][rnd_test_points_idx[0],:])
                 recon_c_e = self.recon_c_e(data['x_test'][rnd_test_points_idx,:])
                 DKL, DKL_inv = self.KL_divergence(data,1000,7)
+                log_L = self.log_likelihood(data['x_test'],data['x_test'][rnd_test_points_idx,:])
                 tf.summary.scalar('rec_error', rec_error, step = epoch)
                 tf.summary.scalar('squared_error', sq_error, step = epoch)
                 tf.summary.scalar('Free Energy', free_energy, step = epoch)
@@ -380,6 +480,7 @@ class RBM():
                 tf.summary.scalar('Binary cross entropy', recon_c_e, step=epoch)
                 tf.summary.scalar('KL divergence', DKL, step=epoch)
                 tf.summary.scalar('inverse KL divergence', DKL_inv, step=epoch)
+                tf.summary.scalar('Log Likelihood', log_L, step=epoch)
             with tf.name_scope('Weights'):
                 self.variable_summaries(self.weights, step = epoch)
             with tf.name_scope('hidden_biases'):

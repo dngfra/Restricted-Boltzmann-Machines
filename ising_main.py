@@ -11,15 +11,16 @@ import deepdish as dd
 import itertools
 import os
 from optimizer import Optimizer
+import yaml
 
-tf.debugging.set_log_device_placement(True)
-datah5 = dd.io.load('data/ising/ising_data_complete.hdf5')
+datah5 = dd.io.load('/Users/fdangelo/PycharmProjects/myRBM/data/ising/ising_data_L32.hdf5')
 
 #Transform -1 in 0 and take spin up as standard configuration
 binarizer = Binarizer(threshold=0)
 keys = list(datah5.keys())
 #put here the temperature from keys that you want to use for the training
-class_names = ['T=2.186995', 'T=2.269184', 'T=3.000000']
+class_names = [keys[i] for i in [4,6,7,8,9,10,11,12,16]]
+n_samples = datah5[keys[0]].shape[0]
 datah5_norm={}
 data_bin={}
 for key in keys:
@@ -27,7 +28,7 @@ for key in keys:
     data_bin[key] = np.array([binarizer.fit_transform(slice) for slice in datah5_norm[key]])
 
 #class labels even if they are not really useful here
-class_labels = np.asarray(list(itertools.chain.from_iterable(itertools.repeat(x, 5000) for x in range(0,len(class_names)))))
+class_labels = np.asarray(list(itertools.chain.from_iterable(itertools.repeat(x, n_samples) for x in range(0,len(class_names)))))
 
 data = data_bin[class_names[0]]
 for temperature in class_names[1:]:
@@ -43,8 +44,12 @@ x_test = x_test.reshape(x_test.shape[0],-1).astype(np.float32)
 data = {"x_train": x_train ,"y_train": y_train,"x_test": x_test,"y_test": y_test}
 
 #Create a restricted boltzmann machines
-machine = RBM(x_train[0].shape[0], 1200, 100, (32, 32), 128,'cd')
+machine = RBM(x_train[0].shape[0], 800, 100, (32, 32), 128,'cd')
 
 optimus = Optimizer(machine, 0.1, opt = 'adam')
+
+machine.save_param(data = class_names)
 #Train the machine
 machine.train(data,optimus)
+
+
