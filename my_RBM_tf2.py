@@ -455,31 +455,6 @@ class RBM():
                 #learning_rate = self.exp_decay_l_r(epoch)
             for i in tqdm(range(0, data['x_train'].shape[0], self._batch_size)):
 
-
-                '''
-                x_train_mini = data['x_train'][i:i+self._batch_size]
-                batch_dw = np.zeros((self._h_dim, self._v_dim, self._batch_size)) #d_w,d_v,d_h don't know why but this is not working
-                batch_dvb = np.zeros((self._v_dim, self._batch_size))
-                batch_dhb = np.zeros((self._h_dim, self._batch_size))
-
-                # I should create an optimizer class at the moment is just if
-
-                if self.training_algorithm == 'cd':
-                    for ind,vec in enumerate(x_train_mini):
-                        batch_dw[:,:,ind],batch_dvb[:,ind],batch_dhb[:,ind] = self.contr_divergence(vec, L2_l=0) #d_w,d_v,d_h not working get lost to write down the values
-
-                #Persistent contrastive divergence
-                elif self.training_algorithm == 'pcd':
-                    start_point = x_train_mini[np.random.randint(0,self._batch_size,1)].reshape(self._v_dim)
-                    for ind in range(self._batch_size):
-                        batch_dw[:, :, ind], batch_dvb[:, ind], batch_dhb[:, ind], last_state = self.contr_divergence(start_point) #I removed last_state from output of contrastive divergence
-                        start_point = tf.reshape(last_state,(self._v_dim,))
-
-                self.grad_dict = {'weights': np.average(batch_dw,2),
-                                   'visible_biases': np.average(batch_dvb,1),
-                                   'hidden_biases': np.average(batch_dhb,1)}
-
-                '''
                 if self.training_algorithm == 'cd':
                     x_train_mini = data['x_train'][i:i + self._batch_size]
                     batch_dw, batch_dvb, batch_dhb= self.parallel_cd(x_train_mini)

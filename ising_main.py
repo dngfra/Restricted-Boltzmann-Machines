@@ -49,9 +49,9 @@ data = {"x_train": x_train ,"y_train": y_train,"x_test": x_test,"y_test": y_test
 #Create a restricted boltzmann machines
 machine = RBM(x_train[0].shape[0], 800, 100, (32, 32), 128,'cd')
 
-optimus = Optimizer(machine, 0.1, opt = 'adam')
+optimus = Optimizer(machine, 0.9, opt = 'adam')
 
-machine.save_param(data = class_names)
+machine.save_param(optimus,data = class_names)
 #Train the machine
 machine.train(data,optimus)
 
