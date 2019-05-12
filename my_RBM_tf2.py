@@ -10,6 +10,7 @@ import deepdish as dd
 from sklearn.neighbors import NearestNeighbors
 import multiprocessing.dummy as mp
 import yaml
+from itertools import product
 
 '''
 class monitoring():
@@ -21,7 +22,7 @@ class monitoring():
 '''
 
 class RBM():
-    def __init__(self, visible_dim, hidden_dim, number_of_epochs, picture_shape, batch_size,  training_algorithm='cd', k = 1, n_test_samples=500, init_learning_rate = 0.8):
+    def __init__(self, visible_dim, hidden_dim, number_of_epochs, picture_shape, batch_size,  training_algorithm='cd', initializer = 'glorot', k = 1, n_test_samples=500, init_learning_rate = 0.8):
         self._n_epoch = number_of_epochs
         self._v_dim = visible_dim
         self._h_dim = hidden_dim
@@ -31,18 +32,26 @@ class RBM():
         self.n_test_samples = n_test_samples
         self.training_algorithm = training_algorithm
         self.epoch = 1
+        self.initializer = initializer
         self.k = k
         self.model = self.model()
         self._current_time = datetime.datetime.now().strftime("%d%m-%H%M%S")
-        self._log_dir = 'logs/scalars/' + self._current_time + '/train'
+        self._log_dir = 'logs/scalars/' + datetime.datetime.now().strftime("%d%m") +'/'+datetime.datetime.now().strftime("%H%M%S") + '/train'
         self._file_writer = tf.summary.create_file_writer(self._log_dir)
         self._file_writer.set_as_default()
 
     #@tf.function
     def model(self):
-        self.visible_biases = tf.Variable(tf.random.uniform([1, self._v_dim], 0, 0.1,seed = 42), tf.float32, name="visible_biases")
-        self.hidden_biases = tf.Variable(tf.random.uniform([1, self._h_dim], 0, 0.1, seed = 42), tf.float32, name="hidden_biases")
-        self.weights = tf.Variable(tf.random.normal([self._h_dim, self._v_dim], mean = 0.0, stddev = 0.1, seed = 42), tf.float32, name="weights")
+        if self.initializer == 'glorot':
+            self.weights = tf.Variable(
+                tf.random.normal([self._h_dim, self._v_dim], mean=0.0, stddev=1, seed=42, dtype=tf.float64)*np.sqrt(2/(self._h_dim + self._v_dim)),
+                tf.float64, name="weights")
+        elif self.initializer == 'normal':
+            self.weights = tf.Variable(
+                tf.random.normal([self._h_dim, self._v_dim], mean=0.0, stddev=0.1, seed=42, dtype=tf.float64),
+                tf.float64, name="weights")
+        self.visible_biases = tf.Variable(tf.random.uniform([1, self._v_dim], 0, 0.1,seed = 42,dtype=tf.float64), tf.float64, name="visible_biases")
+        self.hidden_biases = tf.Variable(tf.random.uniform([1, self._h_dim], 0, 0.1, seed = 42,dtype=tf.float64), tf.float64, name="hidden_biases")
         self.model_dict = {'weights': self.weights, 'visible_biases': self.visible_biases, 'hidden_biases': self.hidden_biases}
         return
 
@@ -58,9 +67,10 @@ class RBM():
                            'hidden_biases': self.hidden_biases.numpy()}
         return dd.io.save('results/models/'+self._current_time+'model.h5', model_dict_save)
 
-    def save_param(self, data = None):
+    def save_param(self, optimizer, data = None):
         to_save = {}
-
+        to_save = {**to_save,**optimizer.__dict__}
+        del to_save['machine']
         if data is not None :
             to_save['data'] = data
 
@@ -71,6 +81,10 @@ class RBM():
                 to_save[key] = value
         with open('results/models/'+self._current_time+'parameters.yml', 'w') as yaml_file:
             yaml.dump(to_save, stream=yaml_file, default_flow_style=False)
+        #display parameters in tensorboard
+        as_text_matrix = [[k, str(w)] for k, w in sorted(to_save.items())]
+        config_summary = tf.summary.text('TrainConfig', tf.convert_to_tensor(as_text_matrix), step = 1)
+
 
     def from_saved_model(self,model_path):
         """
@@ -83,9 +97,9 @@ class RBM():
         """
 
         model_dict = dd.io.load(model_path)
-        self.weights = model_dict['weights']
-        self.visible_biases = model_dict['visible_biases']
-        self.hidden_biases = model_dict['hidden_biases']
+        self.weights = model_dict['weights'].astype(np.float64)
+        self.visible_biases = model_dict['visible_biases'].astype(np.float64)
+        self.hidden_biases = model_dict['hidden_biases'].astype(np.float64)
 
         return self
 
@@ -101,7 +115,7 @@ class RBM():
         """
 
         s = np.random.binomial(1, probability)
-        return s.astype(np.float32)
+        return s.astype(np.float64)
 
 
         #@tf.function
@@ -200,7 +214,7 @@ class RBM():
 
 
     #@tf.function
-    def parallel_cd(self, batch):
+    def parallel_cd(self, batch, l_1 = 0.01):
         hidden_probabilities_0 = tf.sigmoid(tf.tensordot(batch, self.weights, axes=[[1], [1]]) + self.hidden_biases)  # dimension W + 1 row for biases
         hidden_states_0 = self.calculate_state(hidden_probabilities_0)
         hidden_states_0_copy = hidden_states_0.copy()
@@ -217,7 +231,9 @@ class RBM():
         delta_vb = np.average(batch - visible_states_1, 0)
         delta_hb = np.average(hidden_probabilities_0 - hidden_probabilities_1, 0)
 
-        return delta_w.numpy(), delta_vb, delta_hb
+        #return delta_w.numpy(), delta_vb, delta_hb
+        return delta_w.numpy()+l_1*np.sign(self.weights.numpy()), delta_vb+l_1*np.sign(self.visible_biases.numpy()), delta_hb+l_1*np.sign(self.hidden_biases.numpy())
+
 
     def energy(self, visible_config):
         hidden_probabilities = tf.sigmoid(tf.add(tf.tensordot(self.weights, visible_config,1), self.hidden_biases)) # dimension W + 1 row for biases
@@ -384,7 +400,23 @@ class RBM():
         #a lot of dubts wheter I should calculate the partition function on test or train and if i should calculate the likelihood for all the points or not
         log_L = np.inner(self.visible_biases.numpy(),points) + np.sum(np.log((1+np.exp(tf.tensordot(points.astype(np.float64), self.weights.numpy().astype(np.float64), axes=[[1], [1]]) + self.hidden_biases.numpy().astype(np.float64)))),1)
 
-        return - np.mean(log_L) + log_partition_function/points.shape[0]
+        return + np.sum(log_L) - log_partition_function, log_partition_function
+
+    def exact_log_likelihood(self,points, configurations):
+
+        p_v = np.inner(self.visible_biases.numpy(), configurations) + np.product((1 + np.exp(
+            tf.tensordot(configurations.astype(np.float64), self.weights.numpy().astype(np.float64),
+                         axes=[[1], [1]]) + self.hidden_biases.numpy().astype(np.float64))), 1)
+        exact_logZ = np.log(np.sum(p_v))
+        log_L = np.inner(self.visible_biases.numpy(),points) + np.sum(np.log((1+np.exp(tf.tensordot(points.astype(np.float64), self.weights.numpy().astype(np.float64), axes=[[1], [1]]) + self.hidden_biases.numpy().astype(np.float64)))),1)
+        return +np.sum(log_L) - exact_logZ, exact_logZ
+
+    def magnetization_reconstruction(self,test_points):
+        magn_test = np.mean(test_points,1)
+        reconstruction = self.parallel_sample(test_points)[0]
+        magn_reconstruction = np.mean(reconstruction, 1)
+        error = np.mean(np.abs((magn_test - magn_reconstruction)/magn_test))
+        return error
 
     def variable_summaries(self,var, step):
         with tf.name_scope('summaries'):
@@ -410,6 +442,9 @@ class RBM():
         :return: self
         """
         print('Start training...')
+
+        #x = [i for i in product(range(2), repeat=self._v_dim)]
+        #conf = np.array(x)
         test_fixed = np.random.randint(low=0, high=data['x_test'].shape[0], size=self.n_test_samples)
         for epoch in range(1,self._n_epoch+1):
             self.epoch = epoch
@@ -465,14 +500,16 @@ class RBM():
             #test every epoch
             np.random.shuffle(data['x_test'])
             rnd_test_points_idx = np.random.randint(low = 0,high = data['x_test'].shape[0], size=self.n_test_samples) #sample size random points indexes from test
-            with tf.name_scope('Errors'): #TODO: I should computer the reconstruction once and use it inside all these estimatiojs
+            with tf.name_scope('Performance Metrics'): #TODO: I should computer the reconstruction once and use it inside all these estimatiojs
                 rec_error = self.reconstruction_cross_entropy(data['x_test'][rnd_test_points_idx,:]) #TODO: add random test datapoint
                 sq_error = self.average_squared_error(data['x_test'][rnd_test_points_idx,:])
                 free_energy = self.free_energy(data['x_test'][rnd_test_points_idx[0],:])
                 pseudo_log = self.pseudo_log_likelihood(data['x_test'][rnd_test_points_idx[0],:])
                 recon_c_e = self.recon_c_e(data['x_test'][rnd_test_points_idx,:])
                 DKL, DKL_inv = self.KL_divergence(data,1000,7)
-                log_L = self.log_likelihood(data['x_test'],data['x_test'][rnd_test_points_idx,:])
+                log_L_AIS, logZ_AIS = self.log_likelihood(data['x_train'],data['x_train'][rnd_test_points_idx,:])
+                #log_L, logZ = self.exact_log_likelihood(data['x_train'],conf)
+                magnetization_reco_error = self.magnetization_reconstruction(data['x_test'][rnd_test_points_idx,:])
                 tf.summary.scalar('rec_error', rec_error, step = epoch)
                 tf.summary.scalar('squared_error', sq_error, step = epoch)
                 tf.summary.scalar('Free Energy', free_energy, step = epoch)
@@ -480,7 +517,11 @@ class RBM():
                 tf.summary.scalar('Binary cross entropy', recon_c_e, step=epoch)
                 tf.summary.scalar('KL divergence', DKL, step=epoch)
                 tf.summary.scalar('inverse KL divergence', DKL_inv, step=epoch)
-                tf.summary.scalar('Log Likelihood', log_L, step=epoch)
+                tf.summary.scalar('Log Likelihood AIS', log_L_AIS, step=epoch)
+                tf.summary.scalar('PArtition AIS', logZ_AIS, step=epoch)
+                #tf.summary.scalar('Log Likelihood exact', log_L, step=epoch)
+                #tf.summary.scalar('Parition', logZ, step=epoch)
+                tf.summary.scalar('Magn reconstruction error', magnetization_reco_error, step=epoch)
             with tf.name_scope('Weights'):
                 self.variable_summaries(self.weights, step = epoch)
             with tf.name_scope('hidden_biases'):

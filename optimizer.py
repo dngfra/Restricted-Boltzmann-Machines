@@ -5,7 +5,6 @@ class Optimizer:
         self.machine = machine
         self.learning_rate = learning_rate
         self.eps = eps
-        self.machine = machine
         self.opt = opt
 
 
