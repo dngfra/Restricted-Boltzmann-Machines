@@ -11,6 +11,7 @@ from sklearn.neighbors import NearestNeighbors
 import multiprocessing.dummy as mp
 import yaml
 from itertools import product
+import os
 
 '''
 class monitoring():
@@ -22,11 +23,10 @@ class monitoring():
 '''
 
 class RBM():
-    def __init__(self, visible_dim, hidden_dim, number_of_epochs, picture_shape, batch_size,  training_algorithm='cd', initializer = 'glorot', k = 1, n_test_samples=500, init_learning_rate = 0.8):
+    def __init__(self, visible_dim, hidden_dim, number_of_epochs, picture_shape, batch_size,  training_algorithm='cd', initializer = 'glorot', k = 1, n_test_samples=500, l_1 = -1E-6):
         self._n_epoch = number_of_epochs
         self._v_dim = visible_dim
         self._h_dim = hidden_dim
-        self._l_r = init_learning_rate
         self._batch_size = batch_size
         self._picture_shape = picture_shape
         self.n_test_samples = n_test_samples
@@ -34,6 +34,7 @@ class RBM():
         self.epoch = 1
         self.initializer = initializer
         self.k = k
+        self.l_1 = l_1
         self.model = self.model()
         self._current_time = datetime.datetime.now().strftime("%d%m-%H%M%S")
         self._log_dir = 'logs/scalars/' + datetime.datetime.now().strftime("%d%m") +'/'+datetime.datetime.now().strftime("%H%M%S") + '/train'
@@ -44,7 +45,7 @@ class RBM():
     def model(self):
         if self.initializer == 'glorot':
             self.weights = tf.Variable(
-                tf.random.normal([self._h_dim, self._v_dim], mean=0.0, stddev=1, seed=42, dtype=tf.float64)*np.sqrt(2/(self._h_dim + self._v_dim)),
+                tf.random.normal([self._h_dim, self._v_dim], mean=0.0, stddev=0.1, seed=42, dtype=tf.float64)*np.sqrt(2/(self._h_dim + self._v_dim)),
                 tf.float64, name="weights")
         elif self.initializer == 'normal':
             self.weights = tf.Variable(
@@ -65,7 +66,10 @@ class RBM():
         """
         model_dict_save = {'weights': self.weights.numpy(), 'visible_biases': self.visible_biases.numpy(),
                            'hidden_biases': self.hidden_biases.numpy()}
-        return dd.io.save('results/models/'+self._current_time+'model.h5', model_dict_save)
+        d_m_folder= 'results/models/'+datetime.datetime.now().strftime("%d%m")
+        if not os.path.exists(d_m_folder):
+            os.makedirs(d_m_folder)
+        return dd.io.save(d_m_folder+'/'+self._current_time+'model.h5', model_dict_save)
 
     def save_param(self, optimizer, data = None):
         to_save = {}
@@ -137,7 +141,7 @@ class RBM():
         """
         if len(inpt) == 0:
             #inpt = tf.constant(np.random.randint(2, size=self._v_dim), tf.float32)
-            inpt = tf.constant(np.random.choice([0,1], size=self._v_dim,p=[p_0,p_1]), tf.float32)
+            inpt = tf.constant(np.random.choice([0,1], size=self._v_dim,p=[p_0,p_1]), tf.float64)
         hidden_probabilities_0 = tf.sigmoid(tf.add(tf.tensordot(self.weights, inpt,1), self.hidden_biases)) # dimension W + 1 row for biases
         hidden_states_0 = self.calculate_state(hidden_probabilities_0)
         evolution_MC = [inpt]
@@ -152,7 +156,7 @@ class RBM():
 
     def parallel_sample(self, inpt = [] ,n_step_MC=1,p_0=0.5,p_1=0.5, n_chains = 1, save_evolution = False):
         if len(inpt) == 0:
-            inpt = np.random.choice([0, 1], size=(n_chains,self._v_dim), p=[p_0, p_1]).astype(np.float32)
+            inpt = np.random.choice([0, 1], size=(n_chains,self._v_dim), p=[p_0, p_1]).astype(np.float64)
         else:
             #check shape
             if len(inpt.shape) != 2:
@@ -214,7 +218,7 @@ class RBM():
 
 
     #@tf.function
-    def parallel_cd(self, batch, l_1 = 0.01):
+    def parallel_cd(self, batch):
         hidden_probabilities_0 = tf.sigmoid(tf.tensordot(batch, self.weights, axes=[[1], [1]]) + self.hidden_biases)  # dimension W + 1 row for biases
         hidden_states_0 = self.calculate_state(hidden_probabilities_0)
         hidden_states_0_copy = hidden_states_0.copy()
@@ -232,7 +236,7 @@ class RBM():
         delta_hb = np.average(hidden_probabilities_0 - hidden_probabilities_1, 0)
 
         #return delta_w.numpy(), delta_vb, delta_hb
-        return delta_w.numpy()+l_1*np.sign(self.weights.numpy()), delta_vb+l_1*np.sign(self.visible_biases.numpy()), delta_hb+l_1*np.sign(self.hidden_biases.numpy())
+        return delta_w.numpy()+self.l_1*np.sign(self.weights.numpy()), delta_vb+self.l_1*np.sign(self.visible_biases.numpy()), delta_hb+self.l_1*np.sign(self.hidden_biases.numpy())
 
 
     def energy(self, visible_config):
@@ -352,43 +356,57 @@ class RBM():
         DKL_inv = self._v_dim / n_points * l_inv + np.log(n_points / (n_points - 1))
         return DKL, DKL_inv
 
-    def prob_beta(self,beta,points):
-        p_A = np.exp((1-beta)*np.inner(points,self.visible_biases))*np.product(1+np.exp((1-beta)*self.hidden_biases))
-        p_B = np.exp(beta*np.inner(points,self.visible_biases))*np.product(1+np.exp(beta*tf.tensordot(points, self.weights, axes=[[1], [1]]) + self.hidden_biases))
-
-        return p_A*p_B
-
-    def log_partition_function(self,batch,n_step=1, n_beta = 1000):
+    def AIS(machine,n_beta = 10000,n_conf = 20):
+        #configurations = np.random.choice([0, 1], size=(100,784), p=[0.5, 0.5])
+        n_step=1
+        #standard versione without manipulation on expectation of ratio
         beta = np.linspace(0,1,n_beta)
-        rate = np.ones((beta.shape[0]-1, batch.shape[0], self._h_dim))
+        batch = np.random.choice([0, 1], size=(n_conf,machine._v_dim ), p=[0.5, 0.5]).astype(np.float64)
+        #beta = np.concatenate([np.linspace(0,0.5,int(n_beta/4)),np.linspace(0.5,0.9,int(n_beta/4)),np.linspace(0.9,1,n_beta)])
+        #rate = np.ones((beta.shape[0]-1, batch.shape[0], machine._h_dim))
+        rate = np.ones((beta.shape[0]-1, batch.shape[0], machine._h_dim))
+
         for k,b in enumerate(beta[:-1]):
-            hidden_probabilities_0_A = tf.sigmoid((1-b)*self.hidden_biases)  # dimension W + 1 row for biases
-            hidden_probabilities_0_B = tf.sigmoid(b*(tf.tensordot(batch, self.weights, axes=[[1], [1]]) + self.hidden_biases))  # dimension W + 1 row for biases
-            hidden_states_0_A = self.calculate_state(hidden_probabilities_0_A)
-            hidden_states_0_B = self.calculate_state(hidden_probabilities_0_B)
+            hidden_probabilities_0_A = tf.sigmoid((1-b)*machine.hidden_biases)  # dimension W + 1 row for biases
+            hidden_probabilities_0_B = tf.sigmoid(b*(tf.tensordot(batch, machine.weights, axes=[[1], [1]]) + machine.hidden_biases))  # dimension W + 1 row for biases
+            hidden_states_0_A = machine.calculate_state(hidden_probabilities_0_A)
+            hidden_states_0_B = machine.calculate_state(hidden_probabilities_0_B)
 
             for _ in range(n_step):  # gibbs update
-                visible_probabilities_1_AB = tf.sigmoid((1-b)*self.visible_biases + b*(tf.tensordot(hidden_states_0_B, self.weights, axes=[[1], [0]]) + self.visible_biases)) # dimension W + 1 row for biases
-                visible_states_1_AB = self.calculate_state(visible_probabilities_1_AB)
+                visible_probabilities_1_AB = tf.sigmoid((1-b)*machine.visible_biases + b*(tf.tensordot(hidden_states_0_B, machine.weights, axes=[[1], [0]]) + machine.visible_biases)) # dimension W + 1 row for biases
+                visible_states_1_AB = machine.calculate_state(visible_probabilities_1_AB)
 
-                hidden_probabilities_1_A = tf.sigmoid((1 - b) * self.hidden_biases)  # dimension W + 1 row for biases
-                hidden_probabilities_1_B = tf.sigmoid(b * (tf.tensordot(visible_states_1_AB, self.weights, axes=[[1], [1]]) + self.hidden_biases))  # dimension W + 1 row for biases
-                hidden_states_1_A = self.calculate_state(hidden_probabilities_1_A)
-                hidden_states_1_B = self.calculate_state(hidden_probabilities_1_B)
+                hidden_probabilities_1_A = tf.sigmoid((1 - b) * machine.hidden_biases)  # dimension W + 1 row for biases
+                hidden_probabilities_1_B = tf.sigmoid(b * (tf.tensordot(visible_states_1_AB, machine.weights, axes=[[1], [1]]) + machine.hidden_biases))  # dimension W + 1 row for biases
+                hidden_states_1_A = machine.calculate_state(hidden_probabilities_1_A)
+                hidden_states_1_B = machine.calculate_state(hidden_probabilities_1_B)
 
                 hidden_states_0_A = hidden_states_1_A
                 hidden_states_0_B = hidden_states_1_B
-            p_k = ((1 + np.exp((1 - b) * self.hidden_biases)) * (1 + np.exp(b * tf.tensordot(visible_states_1_AB, self.weights, axes=[[1], [1]]) + self.hidden_biases))).astype(np.float64)
-            p_k_1 = ((1 + np.exp((1 - beta[k+1]) * self.hidden_biases)) * (1 + np.exp(beta[k+1] * tf.tensordot(visible_states_1_AB, self.weights, axes=[[1], [1]]) + self.hidden_biases))).astype(np.float64) #p_(k)
-            rate_b = (p_k_1 / p_k).astype(np.float64)
-            rate[k] = rate_b
-        w = np.product(rate, 0)
-        logr_ais = np.sum(np.log(np.mean(w,0)))
-        logZ_A = np.sum(np.log(1+tf.exp(self.visible_biases))) + np.sum(np.log(1+tf.exp(self.hidden_biases))) #if needed add astype(np.float64)
+            batch = visible_states_1_AB
+            if k == 0:
+                p_k = 1 +tf.exp(machine.hidden_biases)
+                p_k_1 =(1 + np.exp((1 - beta[k+1]) * machine.hidden_biases)) * (1 + np.exp(beta[k+1]*(tf.tensordot(visible_states_1_AB, machine.weights, axes=[[1], [1]]) + machine.hidden_biases))) #p_(k)
+            elif k == n_beta - 2:
+                p_k = (1 + np.exp((1 - b) * machine.hidden_biases)) * (1 + np.exp(b*(tf.tensordot(visible_states_1_AB, machine.weights, axes=[[1], [1]]) + machine.hidden_biases)))
+                p_k_1 = 1 + np.exp(beta[k+1]*(tf.tensordot(visible_states_1_AB, machine.weights, axes=[[1], [1]]) + machine.hidden_biases))
+            else:
+                p_k = (1 + np.exp((1 - b) * machine.hidden_biases)) * (1 + np.exp(b*(tf.tensordot(visible_states_1_AB, machine.weights, axes=[[1], [1]]) + machine.hidden_biases)))
+                p_k_1 = (1 + np.exp((1 - beta[k+1]) * machine.hidden_biases)) * (1 + np.exp(beta[k+1]*(tf.tensordot(visible_states_1_AB, machine.weights, axes=[[1], [1]]) + machine.hidden_biases)))#p_(k)
+            rate[k,:,:] = (p_k_1/p_k)
+        rate = np.product(rate,0)
+        rate = np.mean(rate, 0)
+        #w = np.product(rate)
+        logr_ais = np.sum(np.log(rate))
+        #logr_ais = np.log(np.mean(w,0))
+        #logr_ais = np.log(w)
+        #variance_w = 0 # np.std(w,0)
+        logZ_A = np.sum(np.log(1+tf.exp(machine.visible_biases))) + np.sum(np.log(1+tf.exp(machine.hidden_biases))) #if needed add astype(np.float64)
+        return logZ_A+logr_ais
 
-        return -logr_ais+logZ_A
 
-    def log_likelihood(self,points,test):
+
+    def log_likelihood(self,points):
         """
 
         :param points: data points to calculate likelihood
@@ -396,11 +414,11 @@ class RBM():
         :return: float
         """
         # probably I should calculate the partition function just once
-        log_partition_function = self.log_partition_function(test)
+        log_partition_function = self.AIS(20000,20)
         #a lot of dubts wheter I should calculate the partition function on test or train and if i should calculate the likelihood for all the points or not
-        log_L = np.inner(self.visible_biases.numpy(),points) + np.sum(np.log((1+np.exp(tf.tensordot(points.astype(np.float64), self.weights.numpy().astype(np.float64), axes=[[1], [1]]) + self.hidden_biases.numpy().astype(np.float64)))),1)
+        log_L = np.inner(self.visible_biases.numpy(),points) + np.sum(np.log((1+np.exp(tf.tensordot(points, self.weights.numpy(), axes=[[1], [1]]) + self.hidden_biases.numpy()))),1)
 
-        return + np.sum(log_L) - log_partition_function, log_partition_function
+        return  np.mean(log_L) - log_partition_function
 
     def exact_log_likelihood(self,points, configurations):
 
@@ -461,8 +479,9 @@ class RBM():
 
 
                 elif self.training_algorithm == 'pcd':
-                    start_point = data['x_train'][i].reshape(self._v_dim)
-                    x_train_mini = np.array(self.sample(start_point,self._batch_size)[3])
+                    if not i%50 or i == 1:
+                        x_train_mini = data['x_train'][i:i + self._batch_size]
+                    x_train_mini = self.parallel_sample(x_train_mini)[0]
                     batch_dw, batch_dvb, batch_dhb = self.parallel_cd(x_train_mini)
 
                 self.grad_dict = {'weights': batch_dw,
@@ -482,7 +501,7 @@ class RBM():
                 pseudo_log = self.pseudo_log_likelihood(data['x_test'][rnd_test_points_idx[0],:])
                 recon_c_e = self.recon_c_e(data['x_test'][rnd_test_points_idx,:])
                 DKL, DKL_inv = self.KL_divergence(data,1000,7)
-                log_L_AIS, logZ_AIS = self.log_likelihood(data['x_train'],data['x_train'][rnd_test_points_idx,:])
+                #log_L_AIS, logZ_AIS = self.log_likelihood(data['x_train'],data['x_train'][rnd_test_points_idx,:])
                 #log_L, logZ = self.exact_log_likelihood(data['x_train'],conf)
                 magnetization_reco_error = self.magnetization_reconstruction(data['x_test'][rnd_test_points_idx,:])
                 tf.summary.scalar('rec_error', rec_error, step = epoch)
@@ -492,8 +511,8 @@ class RBM():
                 tf.summary.scalar('Binary cross entropy', recon_c_e, step=epoch)
                 tf.summary.scalar('KL divergence', DKL, step=epoch)
                 tf.summary.scalar('inverse KL divergence', DKL_inv, step=epoch)
-                tf.summary.scalar('Log Likelihood AIS', log_L_AIS, step=epoch)
-                tf.summary.scalar('PArtition AIS', logZ_AIS, step=epoch)
+                #tf.summary.scalar('Log Likelihood AIS', log_L_AIS, step=epoch)
+                #tf.summary.scalar('PArtition AIS', logZ_AIS, step=epoch)
                 #tf.summary.scalar('Log Likelihood exact', log_L, step=epoch)
                 #tf.summary.scalar('Parition', logZ, step=epoch)
                 tf.summary.scalar('Magn reconstruction error', magnetization_reco_error, step=epoch)
@@ -503,6 +522,10 @@ class RBM():
                 self.variable_summaries(self.hidden_biases, step = epoch)
             with tf.name_scope('visible_biases'):
                 self.variable_summaries(self.visible_biases, step=epoch)
+            with tf.name_scope('Gradients'):
+                self.variable_summaries(self.grad_dict['weights'], step=epoch)
+                self.variable_summaries(self.grad_dict['visible_biases'], step=epoch)
+                self.variable_summaries(self.grad_dict['hidden_biases'], step=epoch)
 
             reconstruction_plot,prob,inpt,_ = self.sample(inpt=data['x_test'][rnd_test_points_idx[0],:])
             pic = tf.concat([tf.reshape(inpt,(1,self._v_dim)),prob,reconstruction_plot],0)

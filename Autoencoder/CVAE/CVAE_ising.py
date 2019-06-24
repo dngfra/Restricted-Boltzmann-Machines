@@ -5,6 +5,8 @@ import sys
 import time
 import numpy as np
 import glob
+import matplotlib
+matplotlib.use('pdf')
 import matplotlib.pyplot as plt
 import PIL
 import datetime
@@ -13,15 +15,18 @@ import deepdish as dd
 import itertools
 from sklearn.preprocessing import Binarizer
 from sklearn.model_selection import train_test_split
+from sklearn.neighbors import NearestNeighbors
 from IPython import display
 import tensorflow as tf
+from ising_estimations import calcEnergy, correlation_function, correlation_lenght
 
 #os.chdir("/Users/fdangelo/PycharmProjects/myRBM/")
 
 class CVAE(tf.keras.Model):
-  def __init__(self, latent_dim):
+  def __init__(self, latent_dim,num_classes):
     super(CVAE, self).__init__()
     self.latent_dim = latent_dim
+    self.num_classes = num_classes
     self._current_day = datetime.datetime.now().strftime("%d%m")
     self._current_time = datetime.datetime.now().strftime("%H%M%S")
     self._log_dir = 'CVAElogs/scalars/' + datetime.datetime.now().strftime("%d%m") + '/' + datetime.datetime.now().strftime(
@@ -30,20 +35,22 @@ class CVAE(tf.keras.Model):
     self._file_writer.set_as_default()
     self.inference_net = tf.keras.Sequential(
         [
-            tf.keras.layers.InputLayer(input_shape=(32*32+9,)),
-            #tf.keras.layers.Dense(512, activation = 'relu'),
-            #tf.keras.layers.Dense(256, activation = 'relu'),
+            tf.keras.layers.InputLayer(input_shape=(32*32+self.num_classes,)),
+            tf.keras.layers.Dense(768, activation='relu', kernel_regularizer=tf.keras.regularizers.l2(0.01)),
+            tf.keras.layers.Dense(512, activation = 'relu', kernel_regularizer=tf.keras.regularizers.l2(0.01)),
+            tf.keras.layers.Dense(256, activation = 'relu', kernel_regularizer=tf.keras.regularizers.l2(0.01)),
             # No activation, half of the dimensions for the means of the gaussian and half for the sigmas
-            tf.keras.layers.Dense(latent_dim + latent_dim),
+            tf.keras.layers.Dense(latent_dim + latent_dim, kernel_regularizer=tf.keras.regularizers.l2(0.01)),
         ]
     )
 
     self.generative_net = tf.keras.Sequential(
         [
-            tf.keras.layers.InputLayer(input_shape=(latent_dim+9,)),
-            #tf.keras.layers.Dense(units=256, activation=tf.nn.relu),
-            #tf.keras.layers.Dense(units=512, activation=tf.nn.relu),
-            tf.keras.layers.Dense(units=32*32, activation='linear'),
+            tf.keras.layers.InputLayer(input_shape=(latent_dim+self.num_classes,)),
+            tf.keras.layers.Dense(units=256, activation=tf.nn.relu, kernel_regularizer=tf.keras.regularizers.l2(0.01)),
+            tf.keras.layers.Dense(units=512, activation=tf.nn.relu, kernel_regularizer=tf.keras.regularizers.l2(0.01)),
+            tf.keras.layers.Dense(units=768, activation=tf.nn.relu, kernel_regularizer=tf.keras.regularizers.l2(0.01)),
+            tf.keras.layers.Dense(units=32*32, activation='linear', kernel_regularizer=tf.keras.regularizers.l2(0.01)),
         ]
     )
 
@@ -98,7 +105,7 @@ def compute_gradients(model, x):
 def apply_gradients(optimizer, gradients, variables):
   optimizer.apply_gradients(zip(gradients, variables))
 
-
+'''
 def generate_and_save_images(model, epoch, test_input,folder):
   predictions = model.sample(test_input)
   binary_predictions = np.random.binomial(1, predictions.numpy())
@@ -112,7 +119,91 @@ def generate_and_save_images(model, epoch, test_input,folder):
   # tight_layout minimizes the overlap between 2 sub-plots
   plt.savefig(folder+'/image_at_epoch_{:04d}.png'.format(epoch))
   #plt.show()
+'''
+def state_spins(states):
+    states_spins = np.array([np.where(slice==0,-1,slice) for slice in states])
+    return states_spins
 
+def correlation(model,class_names,corr_data,epoch,folder):
+    num_examples_to_generate = 1000
+    matplotlib.use('Agg')
+    radii = [0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 14, 16]
+    colors = ['blue','red','orange']
+    correlation_r_cvae_T = np.zeros((model.num_classes, len(radii)))
+    for enum, m in enumerate(class_names):
+        random_vector_for_generation = tf.random.normal(shape=[num_examples_to_generate, latent_dim])
+        temperature = np.zeros((num_examples_to_generate, len(class_names)))
+        temperature[:, enum] = 1
+        random_vector_for_generation = tf.concat(axis=1, values=[random_vector_for_generation, temperature])
+        predictions = model.sample(random_vector_for_generation)
+        binary_predictions = np.random.binomial(1, predictions.numpy())
+        for idx2, r in enumerate(radii):
+            correlation_r_cvae_T[enum][idx2] = np.mean(
+                [correlation_function(state_spins(np.array(slice)[:1024]).reshape(32, 32), r) for slice in
+                 binary_predictions])
+    for i in range(len(class_names)):
+        plt.plot(radii,correlation_r_cvae_T[i,:], color=colors[i])
+        plt.plot(radii,corr_data[i,:], '--', color=colors[i])
+    plt.title('Correlation')
+    plt.xlabel('Radii')
+    plt.ylabel('Correlations')
+    plt.legend(['CVAE T = 1', 'data T = 1', 'CVAE T = 2.5','data T = 2.5', 'CVAE T = 4.0', 'data T=4.0'], loc=4)
+    plt.savefig(folder + '/image_at_epoch_{:04d}.png'.format(epoch))
+    plt.close()
+    return np.mean(np.abs(np.divide(correlation_r_cvae_T-corr_data,corr_data)))
+
+def KL_divergence(model,data, n_points, n_classes,k_neigh):
+    #todo: I should try with reconstructing point starting from other points
+    rnd_test_points_idx = np.random.randint(low=0, high=data.shape[0], size=n_points)
+    test_points = data[rnd_test_points_idx, :]
+    #reconstruction = np.empty(test_points_2.shape)
+    random_vector_for_generation = tf.random.normal(shape=[n_points, latent_dim])
+    classes = np.identity(n_classes)
+    labels = np.repeat(classes, int(n_points/n_classes),0)
+    random_vector_for_generation = tf.concat(axis=1, values=[random_vector_for_generation, labels])
+    predictions = model.sample(random_vector_for_generation)
+    binary_predictions = np.random.binomial(1, predictions.numpy())
+    nbrs_data = NearestNeighbors(n_neighbors=k_neigh, algorithm='ball_tree', metric='jaccard', n_jobs =-1)
+    nbrs_data.fit(test_points)
+    nbrs_model = NearestNeighbors(n_neighbors=k_neigh, algorithm='ball_tree', metric='jaccard', n_jobs =-1)
+    nbrs_model.fit(binary_predictions)
+
+    rho, _ = nbrs_data.kneighbors(test_points)
+    nu, _ = nbrs_model.kneighbors(test_points)
+
+    rho_inv, _ = nbrs_data.kneighbors(binary_predictions)
+    nu_inv, _ = nbrs_model.kneighbors(binary_predictions)
+
+    l = 0
+    l_inv = 0
+    # -2 is needed because in rho the first distance is always 0 and then with the point itself that we should not consider,
+    #to effectively pick the k-th neigh w.r.t test points and reconstructions we have to take the k-th in rho and the k-th -1 in nu.
+    for i in range(n_points):
+        l += np.log(nu[i, k_neigh-2] / rho[i, k_neigh-1])
+        l_inv += np.log(rho_inv[i, k_neigh-2] / nu_inv[i, k_neigh-1])
+    DKL = data.shape[1]/ n_points * l + np.log(n_points / (n_points - 1))
+    DKL_inv = data.shape[1]/ n_points * l_inv + np.log(n_points / (n_points - 1))
+    return DKL, DKL_inv
+
+def generate_and_save_images(model):
+    random_vector_for_generation = tf.random.normal(shape=[model.num_classes, model.latent_dim])
+    random_c = np.identity(model.num_classes)
+    random_vector_for_generation = tf.concat(axis=1, values=[random_vector_for_generation, random_c])
+    predictions = model.sample(random_vector_for_generation)
+    binary_predictions = np.random.binomial(1, predictions.numpy())
+    pic = tf.reshape(tf.convert_to_tensor(binary_predictions,dtype=tf.float32),(3,32,32,1))
+    return pic
+
+def variable_summaries(var, step):
+    with tf.name_scope('summaries'):
+        mean = tf.reduce_mean(var)
+        tf.summary.scalar('mean', mean, step)
+        with tf.name_scope('stddev'):
+            stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
+        tf.summary.scalar('stddev', stddev, step)
+        tf.summary.scalar('max', tf.reduce_max(var), step)
+        tf.summary.scalar('min', tf.reduce_min(var), step)
+        tf.summary.histogram('histogram', var, step = step)
 
 if __name__ == '__main__':
     #Load and preprocess data
@@ -124,7 +215,8 @@ if __name__ == '__main__':
     binarizer = Binarizer(threshold=0)
     keys = list(datah5.keys())
     # put here the temperature from keys that you want to use for the training
-    class_names = [keys[i] for i in [4, 6, 7, 8, 9, 10, 11, 12, 16]]
+    #class_names = [keys[i] for i in [4, 6, 7, 8, 9, 10, 11, 12, 16]]
+    class_names = [keys[i] for i in [4, 10, 16]]
     n_samples = datah5[keys[0]].shape[0]
     datah5_norm = {}
     data_bin = {}
@@ -142,6 +234,13 @@ if __name__ == '__main__':
     for temperature in class_names[1:]:
         data = np.concatenate([data, data_bin[temperature]])
 
+    radii = [0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 14, 16]
+    correlation_r_data_T = np.zeros((len(class_names), len(radii)))
+
+    for idx1, key in enumerate(class_names):
+        for idx2, r in enumerate(radii):
+            correlation_r_data_T[idx1][idx2] = np.mean([correlation_function(slice.reshape(32, 32), r) for slice in datah5_norm[key]])
+
     # create dictionary for training
     x_train, x_test, y_train, y_test = train_test_split(data, one_hot_labels, test_size=0.1, random_state=42)
 
@@ -152,7 +251,7 @@ if __name__ == '__main__':
     x_test_conc = tf.concat(axis=1, values=[x_test, y_test])
 
     TRAIN_BUF = x_train.shape[0]
-    BATCH_SIZE = 64
+    BATCH_SIZE = 256
 
     TEST_BUF = x_test.shape[0]
 
@@ -160,16 +259,14 @@ if __name__ == '__main__':
     train_dataset = tf.data.Dataset.from_tensor_slices(x_train_conc).shuffle(TRAIN_BUF).batch(BATCH_SIZE)
     test_dataset = tf.data.Dataset.from_tensor_slices(x_test_conc).shuffle(TEST_BUF).batch(BATCH_SIZE)
 
-    epochs = 200
-    latent_dim = 50
-    num_examples_to_generate = 9
+    epochs = 10000
+    latent_dim = 75
+    num_examples_to_generate = 3
 
     # keeping the random vector constant for generation (prediction) so
     # it will be easier to see the improvement.
-    random_vector_for_generation = tf.random.normal(shape=[num_examples_to_generate, latent_dim])
-    random_c = np.identity(9)
-    random_vector_for_generation = tf.concat(axis=1, values=[random_vector_for_generation, random_c])
-    model = CVAE(latent_dim)
+
+    model = CVAE(latent_dim,3)
     results_path = 'results/'+ model._current_day+'/'+model._current_time
     model_path = 'models/'+ model._current_day
     if not os.path.exists(results_path):
@@ -177,7 +274,6 @@ if __name__ == '__main__':
     if not os.path.exists(model_path):
         os.makedirs(model_path)
 
-    generate_and_save_images(model, 0, random_vector_for_generation, results_path)
 
     for epoch in range(1, epochs + 1):
         start_time = time.time()
@@ -193,12 +289,23 @@ if __name__ == '__main__':
             for test_x in test_dataset:
                 loss(compute_loss(model, test_x))
             elbo = -loss.result()
+            #KL_div,inv_KL = KL_divergence(model,x_test,4500,len(class_names),1000)
             display.clear_output(wait=False)
-            print('Epoch: {}, Test set ELBO: {}, '
-                  'time elapse for current epoch {}'.format(epoch,
-                                                            elbo,
+            print('Epoch: {}, Test set ELBO: {}, KL divegence: {}, ''time elapse for current epoch {}'.format(epoch,
+                                                            elbo,1,
                                                             end_time - start_time))
             with tf.name_scope('Performance Metrics'): #TODO: I should computer the reconstruction once and use it inside all these estimatiojs
               tf.summary.scalar('ELBO', elbo, step = epoch)
-            generate_and_save_images(
-                model, epoch, random_vector_for_generation,results_path)
+              #tf.summary.scalar('KL divegence', KL_div, step = epoch)
+              #tf.summary.scalar('Inverse KL', inv_KL, step = epoch)
+            i = np.random.randint(0,data_bin[class_names[0]].shape[0])
+            data = tf.concat([data_bin[class_names[0]][i],data_bin[class_names[1]][i],data_bin[class_names[2]][i]],0)
+            tf.summary.image('Data', tf.cast(tf.reshape(data,(3,32,32,1)),dtype = tf.float32), max_outputs=100, step=epoch)
+            pic = generate_and_save_images(model)
+            tf.summary.image('Samples',pic,max_outputs=100,step = epoch)
+            #with tf.name_scope('Weights'):
+                #variable_summaries(model.weights, step = epoch)
+            if not epoch%5:
+                error_correlation = correlation(model,class_names,correlation_r_data_T,epoch,results_path)
+                with tf.name_scope('Correlation error'):
+                    tf.summary.scalar('Correlation error', error_correlation, step = epoch)
