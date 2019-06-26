@@ -1,9 +1,22 @@
-# Restricted-Boltzmann-Machines
-Implementation of restricted Boltzmann machines in Tensorflow 2
+# Restricted-Boltzmann-Machines and VAE
+Implementation of restricted Boltzmann machines and Variational Autoencoder in Tensorflow 2
 
 <img src="/pictures/sampling_speed.gif" width="210" height="210"/>  <img src="/pictures/rbm2.png" height="190"/>
 
-
+## What is implemented 
+- Bernoulli RBM 
+- Contrastive Divergence, Persistent Contrastive Divergence 
+- KL-Divergence via neighbours distance measure 
+- Exact partition function Z for small models 
+- Approximate partition function  Z via Annealed Importance Sampling 
+- Log likelihood using AIS 
+- Pseudo Log likelihood 
+- Autoencoder (with conv layers)
+- Variational autoencoder VAE 
+- Conditional variational autoencoder c-VAE
+- Ising model: Energy, Two points correlation, correlation lenght
+- Tensorboard: Variable histograms, Reconstruction cross entropy, mean squared error, KL divergence, inverse KL divergence, log-likelihood, gradients, 
+visualization of samples, text summary for the model parameters.
 
 
 
@@ -27,15 +40,19 @@ pip install -r requirements.txt
 ``` 
 ## Basic Usage 
 ### Training an RBM
-The first step to train our Restricted Boltzmann machine is to create it. At the moment we can only crate binary or Bernoulli RBM. After we imported the required classes we can initialize our machine calling RBM and specifying the following parameters: RBM(visible units, hidden units, number of epochs, input picture shape, batch size, optimization algorithm('cd' or 'pcd')).
-Together with the machine we also need an optimizer that has to be initialized with an RBM object, the initial learning rate, and the optimization algorithm ('adam' or 'SGD').
+The first step to train our Restricted Boltzmann machine is to create it. At the moment we can only crate binary or Bernoulli RBM. After we imported the required classes we can initialize our machine calling RBM and specifying the following parameters: RBM(visible units, hidden units, number of epochs, input picture shape, batch size, optimization algorithm('cd' or 'pcd'), inizialization weights, number of MC steps, l1).
+Together with the machine we also need an optimizer that has to be initialized with an RBM object, the initial learning rate, and the optimization algorithm ('adam' or 'SGD'). The last thing that we need to inizialize is a metrics_monitor, it is a class that collect some of the metrics useful to monitor the learning and the performance of the machine. 
 ``` python
 from my_RBM_tf2 import RBM
 from optimizer import Optimizer
 from utils import plot_image_grid, plot_single_image, plot_input_sample
 
-machine = RBM(784, 200, 100,(28,28), 128, 'cd')
+machine = RBM(784, 200,100,(28,28), 128, 'cd', initializer = 'normal')
 optimus = Optimizer(machine, 0.1, opt = 'adam')
+machine.save_param(optimus)
+monitor = Metrics_monitor(machine)
+#Train the machine
+machine.train(data,optimus,monitor)
 ``` 
 Given that we are dealing with Bernoulli RBM the input data must be binarized (0,1) (see main.py for more details). 
 With the preprocessed data we can create a dictionary that will be used to train the machine. 
