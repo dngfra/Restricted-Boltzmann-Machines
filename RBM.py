@@ -379,7 +379,7 @@ class RBM():
             start_time = time.time()
             self.epoch = epoch
             # sys.stdout.write('\r')
-            print('Epoch:', epoch, '/', self._n_epoch)
+            print('Model',self._current_time,'Epoch:', epoch, '/', self._n_epoch)
             np.random.shuffle(data['x_train'])
             for i in tqdm(range(0, data['x_train'].shape[0], self._batch_size)):
 
@@ -390,9 +390,10 @@ class RBM():
 
                 elif self.training_algorithm == 'pcd':
                     initial_vis = data['x_train'][i:i + self._batch_size]
-                    if not epoch % 20 or epoch == 1 and i == 0:
+                    init_hidden_prob = tf.sigmoid(
+                        tf.tensordot(initial_vis, self.weights, axes=[[1], [1]]) + self.hidden_biases)
+                    if (not epoch % 50 or epoch == 1) and i == 0: #when restart the chain
                         x_train_mini = data['x_train'][i:i + self._batch_size]
-                        init_hidden_prob = tf.sigmoid(tf.tensordot(x_train_mini, self.weights, axes=[[1], [1]]) + self.hidden_biases)
                     batch_dw, batch_dvb, batch_dhb, x_train_mini = self.parallel_pcd(x_train_mini, initial_vis,init_hidden_prob[:initial_vis.shape[0],:])
 
                 self.grad_dict = {'weights': batch_dw,
