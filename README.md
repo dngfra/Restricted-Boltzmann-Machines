@@ -115,3 +115,18 @@ source activate RBM
 tensorboard --logdir=path/to/logs
 ``` 
 In your browser you just need to go to http://localhost:6006/. 
+## Citation
+Please cite our paper if you use this code in your research project.
+
+```
+@article{d2020learning,
+  title={Learning the Ising model with generative neural networks},
+  author={D'Angelo, Francesco and B{\"o}ttcher, Lucas},
+  journal={Physical Review Research},
+  volume={2},
+  number={2},
+  pages={023266},
+  year={2020},
+  publisher={APS}
+}
+```
