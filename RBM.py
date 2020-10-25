@@ -14,7 +14,7 @@ import time
 
 class RBM():
     def __init__(self, visible_dim, hidden_dim, number_of_epochs, picture_shape, batch_size, training_algorithm='cd',
-                 initializer='glorot', k=1, n_test_samples=500, l_1=-1E-6):
+                 initializer='glorot', k=1, n_test_samples=500, l_1=-1E-6, pcd_restart = 200):
         self._n_epoch = number_of_epochs
         self._v_dim = visible_dim
         self._h_dim = hidden_dim
@@ -23,6 +23,7 @@ class RBM():
         self.n_test_samples = n_test_samples
         self.training_algorithm = training_algorithm
         self.epoch = 1
+        self.pcd_restart = pcd_restart
         self.initializer = initializer
         self.k = k
         self.l_1 = l_1
@@ -38,16 +39,16 @@ class RBM():
     def model(self):
         if self.initializer == 'glorot':
             self.weights = tf.Variable(
-                tf.random.normal([self._h_dim, self._v_dim], mean=0.0, stddev=0.1, seed=42, dtype=tf.float64) * np.sqrt(
-                    2 / (self._h_dim + self._v_dim)),
+                tf.random.normal([self._h_dim, self._v_dim], mean=0.0, stddev=0.1, dtype=tf.float64) * tf.cast(tf.sqrt(
+                    2 / (self._h_dim + self._v_dim)), tf.float64),
                 tf.float64, name="weights")
         elif self.initializer == 'normal':
             self.weights = tf.Variable(
-                tf.random.normal([self._h_dim, self._v_dim], mean=0.0, stddev=0.1, seed=42, dtype=tf.float64),
+                tf.random.normal([self._h_dim, self._v_dim], mean=0.0, stddev=0.1,  dtype=tf.float64),
                 tf.float64, name="weights")
-        self.visible_biases = tf.Variable(tf.random.uniform([1, self._v_dim], 0, 0.1, seed=42, dtype=tf.float64),
+        self.visible_biases = tf.Variable(tf.random.uniform([1, self._v_dim], 0, 0.1,  dtype=tf.float64),
                                           tf.float64, name="visible_biases")
-        self.hidden_biases = tf.Variable(tf.random.uniform([1, self._h_dim], 0, 0.1, seed=42, dtype=tf.float64),
+        self.hidden_biases = tf.Variable(tf.random.uniform([1, self._h_dim], 0, 0.1, dtype=tf.float64),
                                          tf.float64, name="hidden_biases")
         self.model_dict = {'weights': self.weights, 'visible_biases': self.visible_biases,
                            'hidden_biases': self.hidden_biases}
@@ -173,8 +174,8 @@ class RBM():
             if len(inpt.shape) != 2:
                 inpt = inpt.reshape(1, inpt.shape[0])
         if save_evolution:
-            evolution = np.empty((n_step_MC, self._v_dim))
-            evolution[0] = inpt
+            evolution = np.empty((n_step_MC,inpt.shape[0],self._v_dim))
+            evolution[0,:,:] = inpt
         hidden_probabilities_0 = tf.sigmoid(
             tf.tensordot(inpt, self.weights, axes=[[1], [1]]) + self.hidden_biases)  # dimension W + 1 row for biases
         hidden_states_0 = self.calculate_state(hidden_probabilities_0)
@@ -303,12 +304,13 @@ class RBM():
 
     def energy(self, visible_config):
         hidden_probabilities = tf.sigmoid(
-            tf.add(tf.tensordot(self.weights, visible_config, 1), self.hidden_biases))  # dimension W + 1 row for biases
+            tf.tensordot(visible_config, self.weights, axes=[[1], [1]]) + self.hidden_biases)
         hidden_state = self.calculate_state(hidden_probabilities)
-        E = -np.inner(visible_config, self.visible_biases) - np.inner(hidden_state, self.hidden_biases) - np.inner(
-            hidden_state, tf.tensordot(self.weights, visible_config, 1))
 
-        return E[0]
+        E = -tf.reshape(tf.tensordot(visible_config, self.visible_biases, axes = [[1],[1]]), [-1])-tf.reshape(tf.tensordot(hidden_state, self.hidden_biases, axes = [[1],[1]]),[-1]) \
+            - tf.linalg.tensor_diag_part(tf.matmul(hidden_state,  tf.transpose(tf.tensordot(visible_config, self.weights, axes=[[1], [1]]))))
+
+        return E
 
     def clamped_free_energy(self,test_point,mean = True):
         """
@@ -389,11 +391,15 @@ class RBM():
 
 
                 elif self.training_algorithm == 'pcd':
+                    from_noise = True
                     initial_vis = data['x_train'][i:i + self._batch_size]
                     init_hidden_prob = tf.sigmoid(
                         tf.tensordot(initial_vis, self.weights, axes=[[1], [1]]) + self.hidden_biases)
-                    if (not epoch % 50 or epoch == 1) and i == 0: #when restart the chain
-                        x_train_mini = data['x_train'][i:i + self._batch_size]
+                    if (not epoch % self.pcd_restart or epoch == 1) and i == 0: #when restart the chain
+                        if from_noise:
+                            x_train_mini = np.random.randint(2, size=(self._batch_size, self._v_dim)).astype(np.float64)
+                        else:
+                            x_train_mini = data['x_train'][i:i + self._batch_size]
                     batch_dw, batch_dvb, batch_dhb, x_train_mini = self.parallel_pcd(x_train_mini, initial_vis,init_hidden_prob[:initial_vis.shape[0],:])
 
                 self.grad_dict = {'weights': batch_dw,
